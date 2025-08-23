@@ -126,3 +126,47 @@ def process_unsorted_tracks(music_section):
 
     except Exception as e:
         logging.warning("Could not process unsorted tracks. 'To Mix' collection might not exist. Error: %s", e)
+
+def download_single_playlist(plex, playlist_name, base_dir):
+    """
+    Finds a single playlist by name, downloads its tracks to a dedicated
+    folder, and returns the path to that folder.
+    """
+    logging.info("Attempting to download single playlist: '%s'", playlist_name)
+    
+    try:
+        # Find the playlist by title
+        playlist = next((p for p in plex.playlists() if p.title == playlist_name), None)
+
+        if not playlist:
+            logging.error("Playlist '%s' not found on the server.", playlist_name)
+            return None
+
+        # Sanitize the playlist name to create a valid folder name
+        subfolder_name = playlist_name.strip().lower().replace(" ", "_")
+        playlist_dir = os.path.join(base_dir, subfolder_name)
+        os.makedirs(playlist_dir, exist_ok=True)
+        logging.info("Created download directory: '%s'", playlist_dir)
+        
+        logging.info("Downloading %d tracks from playlist '%s'...", len(playlist.items()), playlist_name)
+        for track in playlist.items():
+            try:
+                filename = os.path.basename(track.media[0].parts[0].file)
+                target_path = os.path.join(playlist_dir, filename)
+                
+                if os.path.exists(target_path):
+                    logging.info("Track '%s' already exists, skipping.", filename)
+                    continue
+                
+                logging.info("Downloading '%s'...", track.title)
+                track.download(savepath=playlist_dir, keep_original_name=True)
+
+            except Exception as e:
+                logging.error("Failed to download track '%s': %s", track.title, e)
+
+        logging.info("Finished downloading tracks for playlist '%s'.", playlist_name)
+        return playlist_dir # Return the path for the conversion step
+
+    except Exception as e:
+        logging.critical("An unexpected error occurred during playlist download: %s", e)
+        return None
