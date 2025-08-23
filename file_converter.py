@@ -5,17 +5,26 @@ import subprocess
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
-def _convert_flac_to_wav(flac_file):
-    """Converts a single .flac file to .wav if it doesn't already exist."""
-    wav_file = os.path.splitext(flac_file)[0] + '.wav'
-    if os.path.exists(wav_file):
-        logging.info("WAV file already exists for '%s'.", os.path.basename(flac_file))
+# UPDATED FUNCTION
+def _convert_flac_to_aiff(flac_file):
+    """Converts a single .flac file to .aiff, preserving all metadata."""
+    # Change the extension from .wav to .aiff
+    aiff_file = os.path.splitext(flac_file)[0] + '.aiff'
+    
+    if os.path.exists(aiff_file):
+        logging.info("AIFF file already exists for '%s'.", os.path.basename(flac_file))
         return
 
     try:
-        logging.info("Converting '%s' to WAV...", os.path.basename(flac_file))
+        logging.info("Converting '%s' to AIFF...", os.path.basename(flac_file))
+        # Updated FFmpeg command for AIFF with metadata preservation
         result = subprocess.run(
-            ["ffmpeg", "-y", "-i", flac_file, wav_file],
+            [
+                "ffmpeg", "-y", "-i", flac_file,
+                "-map_metadata", "0",          # Map all metadata streams
+                "-write_id3v2", "1",           # Ensure ID3v2 tags are written
+                aiff_file
+            ],
             capture_output=True, text=True
         )
         if result.returncode == 0:
@@ -25,8 +34,9 @@ def _convert_flac_to_wav(flac_file):
     except Exception as e:
         logging.error("Exception during conversion of '%s': %s", os.path.basename(flac_file), e)
 
+# UPDATED FUNCTION
 def convert_all_flac(base_dir):
-    """Finds all .flac files and converts them to .wav using a thread pool."""
+    """Finds all .flac files and converts them to .aiff using a thread pool."""
     flac_files = [
         os.path.join(root, file)
         for root, _, files in os.walk(base_dir)
@@ -37,8 +47,9 @@ def convert_all_flac(base_dir):
         logging.info("No FLAC files found to convert.")
         return
 
-    logging.info("Found %d FLAC files to process.", len(flac_files))
+    logging.info("Found %d FLAC files to process for AIFF conversion.", len(flac_files))
     max_workers = os.cpu_count() or 4
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        executor.map(_convert_flac_to_wav, flac_files)
-    logging.info("FLAC to WAV conversion process finished.")
+        # Call the new aiff function
+        executor.map(_convert_flac_to_aiff, flac_files)
+    logging.info("FLAC to AIFF conversion process finished.")
