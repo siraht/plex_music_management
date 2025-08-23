@@ -23,9 +23,9 @@ def run_full_sync():
         return
     
     # Plex-related tasks
-    plex_manager.sync_playlists_to_collections(music_section)
-    plex_manager.sync_collections_and_playlists(music_section)
-    plex_manager.process_unsorted_tracks(music_section)
+    plex_manager.sync_playlists_to_collections(music_section, plex)
+    plex_manager.sync_collections_and_playlists(music_section, plex)
+    plex_manager.process_unsorted_tracks(music_section, plex)
     
     # Filesystem tasks
     plex_manager.download_collection_tracks(music_section, config.BASE_DOWNLOAD_DIR)

@@ -15,11 +15,16 @@ def connect_to_plex(url, token):
         logging.error("Failed to connect to Plex server: %s", e)
         return None
 
-def sync_playlists_to_collections(music_section):
-    """Creates collections from playlists starting with 'To Mix - ' if they don't exist."""
+def sync_playlists_to_collections(music_section, plex_server):
+    """Creates collections from playlists starting with 'To Mix - ' if they don't exist.
+    
+    Args:
+        music_section: The Plex music library section
+        plex_server: The Plex server object
+    """
     logging.info("Starting sync from playlists to collections.")
     existing_collections = {c.title: c for c in music_section.collections() if c.title.startswith("To Mix - ")}
-    playlists = [p for p in music_section.server.playlists() if p.title.startswith("To Mix - ")]
+    playlists = [p for p in plex_server.playlists() if p.title.startswith("To Mix - ")]
 
     for playlist in playlists:
         if playlist.title not in existing_collections:
@@ -33,11 +38,16 @@ def sync_playlists_to_collections(music_section):
         else:
             logging.info("Collection for playlist '%s' already exists.", playlist.title)
 
-def sync_collections_and_playlists(music_section):
-    """Ensures tracks are synchronized between corresponding collections and playlists."""
+def sync_collections_and_playlists(music_section, plex_server):
+    """Ensures tracks are synchronized between corresponding collections and playlists.
+    
+    Args:
+        music_section: The Plex music library section
+        plex_server: The Plex server object
+    """
     logging.info("Starting two-way sync between collections and playlists.")
     collections = [c for c in music_section.collections() if c.title.startswith("To Mix - ")]
-    plex = music_section.server
+    plex = plex_server
     
     for collection in collections:
         playlist = next((p for p in plex.playlists() if p.title == collection.title), None)
@@ -100,17 +110,33 @@ def download_collection_tracks(music_section, base_dir):
             except Exception as e:
                 logging.error("Failed to download track '%s': %s", track.title, e)
 
-def process_unsorted_tracks(music_section):
-    """Finds tracks in 'To Mix' that aren't in other 'To Mix - ' collections and adds them to 'To Mix - Unsorted'."""
+def process_unsorted_tracks(music_section, plex_server):
+    """Finds tracks in 'To Mix' that aren't in other 'To Mix - ' collections and adds them to 'To Mix - Unsorted'.
+    
+    Args:
+        music_section: The Plex music library section
+        plex_server: The Plex server object (currently unused but kept for consistency)
+    """
     logging.info("Processing 'To Mix' for unsorted tracks.")
     try:
-        to_mix_collection = music_section.collection('To Mix')
-        unsorted_collection, _ = music_section.createCollection(title="To Mix - Unsorted", smart=False, items=[])
+        # Get all collections first to avoid multiple API calls
+        all_collections = music_section.collections()
+        
+        # Find the 'To Mix' collection
+        to_mix_collection = next((c for c in all_collections if c.title == 'To Mix'), None)
+        if not to_mix_collection:
+            logging.info("'To Mix' collection not found. Nothing to process.")
+            return
+            
+        # Find or create the 'To Mix - Unsorted' collection
+        unsorted_collection = next((c for c in all_collections if c.title == 'To Mix - Unsorted'), None)
+        if not unsorted_collection:
+            unsorted_collection = music_section.createCollection(title="To Mix - Unsorted", smart=False, items=[])
         
         all_to_mix_tracks = set(to_mix_collection.items())
         sorted_tracks = set()
 
-        specific_collections = [c for c in music_section.collections() if c.title.startswith("To Mix - ") and c.title != "To Mix - Unsorted"]
+        specific_collections = [c for c in all_collections if c.title.startswith("To Mix - ") and c.title not in ["To Mix", "To Mix - Unsorted"]]
         for coll in specific_collections:
             sorted_tracks.update(coll.items())
             
