@@ -1,5 +1,6 @@
 # logger_config.py
 
+import sys
 import logging
 from config import LOG_FILE
 
