@@ -1,2 +1,4 @@
 PlexAPI==4.15.5
 python-dotenv==1.0.1
+Flask==3.0.3
+mutagen==1.47.0

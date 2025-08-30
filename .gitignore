@@ -7,3 +7,5 @@ __pycache__/
 
 # Log files
 *.log
+conversion.log.old
+conversion.log
