@@ -82,11 +82,47 @@ def scan_files_and_group():
     # Sort by key (path)
     return dict(sorted(file_groups.items()))
 
+def create_tree_data(file_groups):
+    """Converts the flat file group into a structure for AG Grid with folder information."""
+    tree_data = []
+
+    base_path_parts = config.BASE_DOWNLOAD_DIR.rstrip(os.sep).split(os.sep)
+    base_len = len(base_path_parts)
+
+    for group_key, data in file_groups.items():
+        # Create path parts relative to the base download directory
+        full_path_parts = group_key.split(os.sep)
+        relative_path_parts = full_path_parts[base_len:]
+        
+        # Create a path for grouping
+        path = '/'.join(relative_path_parts[:-1])  # Exclude filename from path
+        filename = os.path.splitext(relative_path_parts[-1])[0]
+
+        # Add the file entry
+        file_entry = {
+            'filepath': path,  # This will be used for grouping
+            'filename': filename,
+            'artist': data['metadata'].get('artist', ''),
+            'album': data['metadata'].get('album', ''),
+            'title': data['metadata'].get('title', '') or filename,
+            'formats': [os.path.splitext(f)[1][1:].upper() for f in data['files']],
+            'group_key': group_key
+        }
+        tree_data.append(file_entry)
+
+    return tree_data
+
 @app.route('/')
 def index():
-    """Main page - displays all grouped audio files."""
+    """Main page - renders the container for the grid."""
+    return render_template('index.html')
+
+@app.route('/api/files')
+def get_files_for_grid():
+    """API endpoint to provide file data for the AG Grid."""
     grouped_files = scan_files_and_group()
-    return render_template('index.html', grouped_files=grouped_files)
+    tree_data = create_tree_data(grouped_files)
+    return jsonify(tree_data)
 
 @app.route('/api/tag', methods=['POST'])
 def tag_file():

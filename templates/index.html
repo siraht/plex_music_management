@@ -6,6 +6,9 @@
     <title>Plex Tagger</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <!-- AG Grid CSS
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-grid.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/ag-grid-community/styles/ag-theme-alpine.css"> -->
 </head>
 <body>
     <div class="container">
@@ -14,117 +17,13 @@
         </header>
         
         <main>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Track Name</th>
-                            <th>Artist</th>
-                            <th>Album</th>
-                            <th>Title</th>
-                            <th>Available Formats</th>
-                            <th>Energy Level</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for key, data in grouped_files.items() %}
-                        <tr>
-                            <td class="track-name">{{ key.split('/')[-1] }}</td>
-                            <td class="artist">{{ data.metadata.get('artist', '') }}</td>
-                            <td class="album">{{ data.metadata.get('album', '') }}</td>
-                            <td class="title">{{ data.metadata.get('title', '') }}</td>
-                            <td class="formats">
-                                {% for file in data.files %}
-                                    <span class="format-tag">{{ file.split('.')[-1] }}</span>
-                                {% endfor %}
-                            </td>
-                            <td class="energy-input">
-                                <div class="input-wrapper">
-                                    <input type="number" id="energy-{{ loop.index }}" min="1" max="10" value="7" 
-                                           aria-label="Energy level for {{ key.split('/')[-1] }}">
-                                    <span class="energy-label">/10</span>
-                                </div>
-                            </td>
-                            <td class="actions">
-                                <button onclick="tagTrack('{{ key|e }}', {{ loop.index }});" 
-                                        class="btn-apply">
-                                    Apply Tags
-                                </button>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            <div id="myGrid" class="ag-theme-alpine-dark" style="height: 600px; width: 100%;"></div>
         </main>
     </div>
 
-    <script>
-        function tagTrack(groupKey, index) {
-            const energyInput = document.getElementById(`energy-${index}`);
-            const button = document.querySelector(`button[onclick*="${groupKey}"]`);
-            const originalText = button.textContent;
-            const energyLevel = energyInput.value;
-            
-            if (!energyLevel || energyLevel < 1 || energyLevel > 10) {
-                alert('Please enter a valid energy level between 1 and 10');
-                return;
-            }
-
-            // Show loading state
-            button.disabled = true;
-            button.textContent = 'Processing...';
-            button.classList.add('processing');
-
-            fetch('/api/tag', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    group_key: groupKey,
-                    energy: energyLevel
-                })
-            })
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                return response.json();
-            })
-            .then(data => {
-                if (data.status === 'success') {
-                    // Update UI to show success
-                    button.textContent = '✓ Done';
-                    button.classList.remove('btn-apply');
-                    button.classList.add('btn-success');
-                    
-                    // Disable the energy input
-                    energyInput.disabled = true;
-                } else {
-                    throw new Error(data.message || 'Unknown error occurred');
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Error: ' + (error.message || 'Failed to apply tags'));
-                button.disabled = false;
-                button.textContent = originalText;
-                button.classList.remove('processing');
-            });
-        }
-
-        // Add input validation
-        document.addEventListener('DOMContentLoaded', () => {
-            document.querySelectorAll('input[type="number"]').forEach(input => {
-                input.addEventListener('input', (e) => {
-                    const value = parseInt(e.target.value);
-                    if (value < 1) e.target.value = 1;
-                    if (value > 10) e.target.value = 10;
-                });
-            });
-        });
-    </script>
+    <!-- AG Grid JS -->
+    <script src="https://cdn.jsdelivr.net/npm/ag-grid-community/dist/ag-grid-community.min.js"></script>
+    <!-- Custom JS -->
+    <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>
