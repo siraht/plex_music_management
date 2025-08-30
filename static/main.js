@@ -105,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function tagTrack(params) {
     const node = params.node;
     const groupKey = node.data.group_key;
-    const energyLevel = node.data.energy || document.querySelector(`// ... find input for this row ... //`).value; // Simplified, direct binding is better
+    const energyLevel = node.data.energy;
     const button = params.eGridCell.querySelector('button');
     const originalText = button.textContent;
 
