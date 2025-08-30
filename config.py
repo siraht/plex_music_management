@@ -13,6 +13,9 @@ PLEX_TOKEN = os.getenv("PLEX_TOKEN")
 BASE_DOWNLOAD_DIR = os.getenv("BASE_DOWNLOAD_DIR")
 LOG_FILE = os.getenv("LOG_FILE_PATH")
 
+# Path to the JSON file for storing tags
+TAGS_FILE = os.path.join(os.path.dirname(__file__), 'tags.json')
+
 # --- Validate essential variables ---
 if not all([PLEX_URL, PLEX_TOKEN, BASE_DOWNLOAD_DIR, LOG_FILE]):
     raise ValueError(

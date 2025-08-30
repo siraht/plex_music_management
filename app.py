@@ -7,6 +7,7 @@ from mutagen.flac import FLAC
 from mutagen.aiff import AIFF
 from mutagen.mp3 import MP3
 from mutagen.wave import WAVE
+import json
 
 import config
 from tag_manager import apply_tags_to_group
@@ -14,6 +15,27 @@ from tag_manager import apply_tags_to_group
 # Configure Flask
 app = Flask(__name__)
 
+# --- Tag Management Functions ---
+def load_tags():
+    """Loads tags from the JSON file."""
+    if not os.path.exists(config.TAGS_FILE):
+        return []
+    try:
+        with open(config.TAGS_FILE, 'r') as f:
+            return json.load(f)
+    except (IOError, json.JSONDecodeError) as e:
+        logging.error(f"Error loading tags file: {e}")
+        return []
+
+def save_tags(tags):
+    """Saves tags to the JSON file."""
+    try:
+        with open(config.TAGS_FILE, 'w') as f:
+            json.dump(tags, f, indent=4)
+    except IOError as e:
+        logging.error(f"Error saving tags file: {e}")
+
+# --- Metadata and File Scanning ---
 def get_audio_metadata(file_path):
     """Extract metadata from audio file."""
     try:
@@ -112,6 +134,7 @@ def create_tree_data(file_groups):
 
     return tree_data
 
+# --- API Endpoints ---
 @app.route('/')
 def index():
     """Main page - renders the container for the grid."""
@@ -124,15 +147,31 @@ def get_files_for_grid():
     tree_data = create_tree_data(grouped_files)
     return jsonify(tree_data)
 
+@app.route('/api/tags', methods=['GET'])
+def get_tags():
+    """API endpoint to get the list of available tags."""
+    tags = load_tags()
+    return jsonify(tags)
+
+@app.route('/api/tags', methods=['POST'])
+def save_all_tags():
+    """API endpoint to save all tags, replacing the existing ones."""
+    tags_data = request.json
+    if not isinstance(tags_data, list):
+        return jsonify({'status': 'error', 'message': 'Invalid data format, expected a list of tags'}), 400
+    
+    save_tags(tags_data)
+    return jsonify({'status': 'success', 'message': 'Tags saved successfully.'})
+
 @app.route('/api/tag', methods=['POST'])
 def tag_file():
     """API endpoint to receive tagging requests from the frontend."""
     data = request.json
     group_key = data.get('group_key')
-    energy_level = data.get('energy')
+    tags_to_apply = data.get('tags')
 
-    if not group_key or not energy_level:
-        return jsonify({'status': 'error', 'message': 'Missing data'}), 400
+    if not group_key or not tags_to_apply:
+        return jsonify({'status': 'error', 'message': 'Missing group_key or tags'}), 400
 
     all_files = scan_files_and_group()
     file_group = all_files.get(group_key)
@@ -141,7 +180,7 @@ def tag_file():
         return jsonify({'status': 'error', 'message': 'File group not found'}), 404
 
     # Apply tags to all files in the group
-    apply_tags_to_group(file_group['files'], {'energy': energy_level})
+    apply_tags_to_group(file_group['files'], tags_to_apply)
     return jsonify({'status': 'success', 'message': f'Tagged {os.path.basename(group_key)}'})
 
 if __name__ == '__main__':

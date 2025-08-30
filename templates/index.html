@@ -14,11 +14,22 @@
     <div class="container">
         <header>
             <h1>Plex Music Tagger</h1>
+            <button id="manage-tags-btn" class="btn">Manage Tags</button>
         </header>
         
         <main>
             <div id="myGrid" class="ag-theme-alpine-dark" style="height: 600px; width: 100%;"></div>
         </main>
+    </div>
+
+    <div id="tag-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <h2>Manage Tags</h2>
+            <div id="tag-list-editor"></div>
+            <button id="add-tag-btn" class="btn">Add New Tag</button>
+            <button id="save-tags-btn" class="btn btn-primary">Save Tags</button>
+        </div>
     </div>
 
     <!-- AG Grid JS -->

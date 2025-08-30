@@ -1,0 +1,14 @@
+[
+    {
+        "name": "Energy",
+        "type": "number",
+        "defaultValue": "7",
+        "min": 1,
+        "max": 10
+    },
+    {
+        "name": "Mood",
+        "type": "text",
+        "defaultValue": ""
+    }
+]
