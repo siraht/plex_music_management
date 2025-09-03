@@ -1,127 +1,217 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const gridDiv = document.querySelector('#myGrid');
-    let gridApi = null;
+    let table = null;
 
-    // Base Column Definitions
-    const baseColumnDefs = [
-        { 
-            field: 'filepath',
-            headerName: 'File Path'
-        },
-        { 
-            field: 'artist', 
-            headerName: 'Artist', 
-            filter: true, 
-            resizable: true, 
-            sortable: true 
-        },
-        {
-            field: 'album',
-            headerName: 'Album',
-            filter: true,
-            resizable: true,
-            sortable: true
-        },
-        {
-            field: 'title',
-            headerName: 'Title',
-            filter: true,
-            resizable: true,
-            sortable: true
-        },
-        {
-            field: 'formats',
-            headerName: 'Available Formats',
-            resizable: true,
-            sortable: true,
-            valueFormatter: params => params.value ? params.value.join(', ') : '',
-            cellRenderer: params => {
-                if (params.value) {
-                    return params.value.map(format => `<span class="format-tag">${format}</span>`).join(' ');
-                }
-                return '';
+    // Transform flat track data into hierarchical tree structure for Tabulator
+    function transformDataToTreeStructure(data) {
+        // Create group nodes and track children
+        const groups = new Map();
+        const treeData = [];
+        
+        data.forEach(track => {
+            // Extract directory path from filepath
+            let groupPath = track.filepath || '';
+            
+            // Remove leading slash and normalize the path
+            if (groupPath.startsWith('/')) {
+                groupPath = groupPath.substring(1);
             }
+            
+            // Determine group name
+            let groupName;
+            if (groupPath === '' || groupPath === '.' || !groupPath.includes('/')) {
+                groupName = 'None'; // Base directory files
+            } else {
+                // Use the directory path as group name
+                groupName = groupPath;
+            }
+            
+            // Create or get the group
+            if (!groups.has(groupName)) {
+                const groupNode = {
+                    id: `group_${groupName}`,
+                    _children: [],
+                    isGroup: true,
+                    groupName: groupName,
+                    filepath: groupName === 'None' ? '' : groupName,
+                    // Empty values for group rows
+                    artist: '',
+                    album: '',
+                    title: '',
+                    formats: null,
+                    action: ''
+                };
+                groups.set(groupName, groupNode);
+            }
+            
+            // Add track to the appropriate group's _children
+            const group = groups.get(groupName);
+            group._children.push({
+                id: `track_${track.group_key || Math.random()}`,
+                ...track,
+                isGroup: false
+            });
+        });
+        
+        // Convert groups to array
+        for (let group of groups.values()) {
+            treeData.push(group);
         }
-    ];
+        
+        return treeData;
+    }
 
-    const actionColumn = {
-        headerName: 'Action',
-        field: 'action',
-        resizable: false,
-        sortable: false,
-        cellRenderer: params => {
-            const button = document.createElement('button');
-            button.innerHTML = 'Apply Tags';
-            button.classList.add('btn-apply');
-            button.addEventListener('click', () => tagTrack(params));
-            params.eGridCell.addEventListener('click', (event) => event.stopPropagation());
-            return button;
-        }
-    };
-
-    // Fetch tags and configure grid
-    fetch('/api/tags')
-        .then(response => response.json())
-        .then(tags => {
-            const tagColumnDefs = tags.map(tag => ({
-                headerName: tag.name,
-                field: tag.name.toLowerCase(),
-                resizable: true,
-                sortable: true,
-                cellRenderer: params => {
-                    const input = document.createElement('input');
-                    input.type = tag.type || 'text';
-                    if (tag.type === 'number') {
-                        if (tag.min !== undefined) input.min = tag.min;
-                        if (tag.max !== undefined) input.max = tag.max;
+    // Initialize Tabulator with tree data configuration
+    function initializeTable(tags) {
+        // Base column definitions
+        const baseColumns = [
+            {
+                title: "File/Directory",
+                field: "groupName",
+                frozen: true,
+                responsive: 0,
+                formatter: function(cell, formatterParams) {
+                    const data = cell.getRow().getData();
+                    if (data.isGroup) {
+                        return data.groupName;
+                    } else {
+                        return data.filename || data.title || 'Unknown File';
                     }
-                    
-                    // Use the current tag value from cache or default
-                    const currentValue = params.value || tag.defaultValue || '';
-                    input.value = currentValue;
-                    
-                    input.classList.add('tag-input-grid');
-                    input.dataset.tagName = tag.name.toLowerCase();
-                    input.addEventListener('change', (e) => {
-                        params.data[tag.name.toLowerCase()] = e.target.value;
-                    });
-                    return input;
-                },
-                editable: false
-            }));
-
-            const columnDefs = [...baseColumnDefs, ...tagColumnDefs, actionColumn];
-
-            const gridOptions = {
-                columnDefs: columnDefs,
-                rowData: [],
-                rowSelection: 'multiple',
-                animateRows: true,
-                onGridReady: params => {
-                    gridApi = params.api;
-                    loadFilesIntoGrid();
-                },
-                defaultColDef: {
-                    flex: 1,
-                    minWidth: 100,
-                    sortable: true,
-                    resizable: true,
-                    filter: true
                 }
-            };
+            },
+            {
+                title: "Artist",
+                field: "artist",
+                editor: false,
+                formatter: function(cell, formatterParams) {
+                    const data = cell.getRow().getData();
+                    return data.isGroup ? '' : (data.artist || '');
+                }
+            },
+            {
+                title: "Album", 
+                field: "album",
+                editor: false,
+                formatter: function(cell, formatterParams) {
+                    const data = cell.getRow().getData();
+                    return data.isGroup ? '' : (data.album || '');
+                }
+            },
+            {
+                title: "Title",
+                field: "title",
+                editor: false,
+                formatter: function(cell, formatterParams) {
+                    const data = cell.getRow().getData();
+                    return data.isGroup ? '' : (data.title || '');
+                }
+            },
+            {
+                title: "Available Formats",
+                field: "formats",
+                formatter: function(cell, formatterParams) {
+                    const data = cell.getRow().getData();
+                    if (data.isGroup || !data.formats) return '';
+                    
+                    return data.formats.map(format => 
+                        `<span class="format-tag">${format}</span>`
+                    ).join(' ');
+                }
+            }
+        ];
 
-            agGrid.createGrid(gridDiv, gridOptions);
+        // Add tag columns
+        const tagColumns = tags.map(tag => ({
+            title: tag.name,
+            field: tag.name.toLowerCase(),
+            editor: function(cell, onRendered, success, cancel) {
+                const data = cell.getRow().getData();
+                if (data.isGroup) {
+                    cancel();
+                    return;
+                }
+                
+                const input = document.createElement('input');
+                input.type = tag.type || 'text';
+                if (tag.type === 'number') {
+                    if (tag.min !== undefined) input.min = tag.min;
+                    if (tag.max !== undefined) input.max = tag.max;
+                }
+                
+                input.value = cell.getValue() || tag.defaultValue || '';
+                input.classList.add('tag-input-grid');
+                
+                onRendered(() => {
+                    input.focus();
+                });
+                
+                input.addEventListener('change', () => {
+                    success(input.value);
+                });
+                
+                input.addEventListener('blur', () => {
+                    success(input.value);
+                });
+                
+                return input;
+            },
+            formatter: function(cell, formatterParams) {
+                const data = cell.getRow().getData();
+                if (data.isGroup) return '';
+                return cell.getValue() || '';
+            }
+        }));
+
+        // Add action column
+        const actionColumn = {
+            title: "Action",
+            field: "action",
+            width: 120,
+            hozAlign: "center",
+            formatter: function(cell, formatterParams) {
+                const data = cell.getRow().getData();
+                if (data.isGroup) return '';
+                
+                return '<button class="btn-apply" onclick="tagTrackFromTable(this)">Apply Tags</button>';
+            }
+        };
+
+        const allColumns = [...baseColumns, ...tagColumns, actionColumn];
+
+        // Initialize Tabulator
+        table = new Tabulator("#music-table", {
+            data: [],
+            layout: "fitColumns",
+            responsiveLayout: "hide",
+            placeholder: "No Data Available",
+            selectable: true,
+            dataTree: true,
+            dataTreeStartExpanded: false,
+            dataTreeChildField: "_children",
+            columns: allColumns,
+            rowFormatter: function(row) {
+                const data = row.getData();
+                if (data.isGroup) {
+                    row.getElement().classList.add("group-row");
+                }
+            }
         });
 
-    function loadFilesIntoGrid(forceRefresh = false) {
+        // Load data into table
+        loadFilesIntoTable();
+    }
+
+    // Load files and transform to tree structure
+    function loadFilesIntoTable(forceRefresh = false) {
         const url = forceRefresh ? '/api/files/refresh' : '/api/files';
         
         fetch(url)
             .then(response => response.json())
             .then(data => {
-                if (gridApi) {
-                    gridApi.setGridOption('rowData', data);
-                    showNotification(`Loaded ${data.length} tracks${forceRefresh ? ' (force refreshed)' : ''}`, 'success');
+                if (table) {
+                    // Transform flat data to tree structure
+                    const treeData = transformDataToTreeStructure(data);
+                    table.setData(treeData);
+                    showNotification(`Loaded ${data.length} tracks${forceRefresh ? ' (force refreshed)' : ''} in ${treeData.length} groups`, 'success');
                 }
             })
             .catch(error => {
@@ -129,6 +219,51 @@ document.addEventListener('DOMContentLoaded', () => {
                 showNotification('Error loading files', 'error');
             });
     }
+
+    // Add functions to expand/collapse all groups
+    window.expandAll = function() {
+        if (table) {
+            table.getRows().forEach(row => {
+                if (row.getData().isGroup) {
+                    row.treeExpand();
+                }
+            });
+        }
+    };
+
+    window.collapseAll = function() {
+        if (table) {
+            table.getRows().forEach(row => {
+                if (row.getData().isGroup) {
+                    row.treeCollapse();
+                }
+            });
+        }
+    };
+
+    // Global function for tag application (called from button onclick)
+    window.tagTrackFromTable = function(button) {
+        // Find the row data
+        const cell = button.closest('.tabulator-cell');
+        const row = table.getRow(cell.closest('.tabulator-row'));
+        const rowData = row.getData();
+        
+        tagTrack({
+            node: { data: rowData },
+            eGridCell: { querySelector: () => button }
+        });
+    };
+
+    // Fetch tags and initialize table
+    fetch('/api/tags')
+        .then(response => response.json())
+        .then(tags => {
+            initializeTable(tags);
+        })
+        .catch(error => {
+            console.error('Error loading tags:', error);
+            initializeTable([]); // Initialize with empty tags
+        });
 
     // --- Settings Modal --- //
     const settingsModal = document.getElementById('settings-modal');
@@ -181,8 +316,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.status === 'success') {
                     settingsModal.style.display = "none";
                     showNotification('Settings saved successfully!', 'success');
-                    // Refresh the grid to reflect new tag placement settings
-                    loadFilesIntoGrid(true);
+                    // Refresh the table to reflect new tag placement settings
+                    loadFilesIntoTable(true);
                 } else {
                     alert('Error saving settings: ' + (data.message || 'Unknown error'));
                 }
@@ -372,7 +507,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.status === 'success') {
                     modal.style.display = "none";
                     showNotification('Tags saved successfully!', 'success');
-                    location.reload(); // Reload to update the grid with new tags
+                    location.reload(); // Reload to update the table with new tags
                 } else {
                     alert('Error saving tags: ' + (data.message || 'Unknown error'));
                 }
@@ -384,57 +519,10 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // Cache management functions
-    function refreshFiles() {
-        showNotification('Refreshing all files...', 'info');
-        loadFilesIntoGrid(true);
-    }
-
-    function clearCache() {
-        if (confirm('Are you sure you want to clear the cache? This will force a full rescan on the next load.')) {
-            fetch('/api/cache/clear', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    showNotification('Cache cleared successfully', 'success');
-                } else {
-                    showNotification('Error clearing cache: ' + (data.message || 'Unknown error'), 'error');
-                }
-            })
-            .catch(error => {
-                console.error('Error clearing cache:', error);
-                showNotification('Failed to clear cache', 'error');
-            });
-        }
-    }
-
-    function showCacheStats() {
-        fetch('/api/cache/stats')
-            .then(response => response.json())
-            .then(data => {
-                if (data.total_cached_files !== undefined) {
-                    const lastUpdated = data.last_updated ? new Date(data.last_updated * 1000).toLocaleString() : 'Never';
-                    const message = `Cache Stats:\n• Total cached files: ${data.total_cached_files}\n• Last updated: ${lastUpdated}\n• Database: ${data.cache_db_path}`;
-                    alert(message);
-                } else {
-                    showNotification('Error getting cache stats: ' + (data.message || 'Unknown error'), 'error');
-                }
-            })
-            .catch(error => {
-                console.error('Error getting cache stats:', error);
-                showNotification('Failed to get cache stats', 'error');
-            });
-    }
-
     // Cache management functions (moved outside DOMContentLoaded)
     window.refreshFiles = function() {
         showNotification('Refreshing all files...', 'info');
-        loadFilesIntoGrid(true);
+        loadFilesIntoTable(true);
     };
 
     window.clearCache = function() {
@@ -531,6 +619,14 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey || e.metaKey) {
             switch(e.key) {
+                case 'e':
+                    e.preventDefault();
+                    expandAll();
+                    break;
+                case 'c':
+                    e.preventDefault();
+                    collapseAll();
+                    break;
             }
         }
     });
@@ -589,13 +685,10 @@ function tagTrack(params) {
                     button.textContent = '✓ Done';
                     button.classList.remove('btn-apply');
                     button.classList.add('btn-success');
+                    button.disabled = true;
                     
                     // Update the row data with the applied tags
                     Object.assign(node.data, tagsToApply);
-                    
-                    // Optionally disable all inputs in the row
-                    const tagInputs = params.eGridCell.parentElement.querySelectorAll('.tag-input-grid');
-                    tagInputs.forEach(input => input.disabled = true);
                     
                     showNotification(`Successfully tagged ${node.data.filename}`, 'success');
                 } else {

@@ -681,3 +681,179 @@ header {
 .filename-critical:hover {
     cursor: help;
 }
+
+
+/* Tabulator Tree Data and General Styles */
+.tabulator {
+  background-color: var(--bg-color);
+  border: 1px solid #444;
+  border-radius: 8px;
+  font-family: 'Inter', sans-serif;
+}
+
+.tabulator-header {
+  background-color: #2a2a2a;
+  border-bottom: 1px solid #444;
+}
+
+.tabulator-header .tabulator-col {
+  background-color: #2a2a2a;
+  border-right: 1px solid #444;
+  color: #fff;
+}
+
+.tabulator-header .tabulator-col-title {
+  color: #fff;
+  font-weight: 600;
+}
+
+.tabulator-row {
+  background-color: var(--bg-color);
+  border-bottom: 1px solid #333;
+  color: #fff;
+}
+
+.tabulator-row:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.tabulator-row.group-row {
+  background-color: rgba(255, 255, 255, 0.08);
+  font-weight: 600;
+  color: var(--primary-color);
+}
+
+.tabulator-row.group-row:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+.tabulator-cell {
+  border-right: 1px solid #333;
+  color: #fff;
+  padding: 8px 12px;
+}
+
+/* Tree structure styling */
+.tabulator-data-tree-branch {
+  border-left: 2px solid #555;
+  border-bottom: 2px solid #555;
+}
+
+.tabulator-data-tree-control {
+  border: 1px solid #666;
+  background: #444;
+  color: #fff;
+}
+
+.tabulator-data-tree-control:hover {
+  background: var(--primary-color);
+}
+
+.tabulator-data-tree-control-expand:after {
+  color: #fff;
+}
+
+.tabulator-data-tree-control-collapse:after {
+  color: #fff;
+}
+
+/* Format tags styling */
+.format-tag {
+  background-color: var(--primary-color);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 0.8em;
+  margin-right: 4px;
+  display: inline-block;
+}
+
+/* Tag input styling */
+.tag-input-grid {
+  background-color: #333;
+  border: 1px solid #555;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 0.9em;
+  width: 100%;
+}
+
+.tag-input-grid:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.3);
+}
+
+/* Button styling in table */
+.tabulator-cell .btn-apply {
+  background-color: var(--primary-color);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.85em;
+  transition: background-color 0.2s;
+}
+
+.tabulator-cell .btn-apply:hover {
+  background-color: #3a7bc8;
+}
+
+.tabulator-cell .btn-apply.processing {
+  background-color: #ffc107;
+  cursor: not-allowed;
+}
+
+.tabulator-cell .btn-success {
+  background-color: #28a745;
+  cursor: not-allowed;
+}
+
+/* Dark mode scrollbar for tabulator */
+.tabulator-tableHolder::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.tabulator-tableHolder::-webkit-scrollbar-track {
+  background: #2a2a2a;
+}
+
+.tabulator-tableHolder::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 6px;
+}
+
+.tabulator-tableHolder::-webkit-scrollbar-thumb:hover {
+  background: #666;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .tabulator {
+    font-size: 0.9em;
+  }
+  
+  .tabulator-cell {
+    padding: 6px 8px;
+  }
+}
+
+/* Override Tabulator's default dark styling */
+.tabulator.tabulator-dark {
+  background-color: var(--bg-color);
+}
+
+.tabulator.tabulator-dark .tabulator-header {
+  background-color: #2a2a2a;
+}
+
+.tabulator.tabulator-dark .tabulator-row {
+  background-color: var(--bg-color);
+}
+
+.tabulator.tabulator-dark .tabulator-row:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
