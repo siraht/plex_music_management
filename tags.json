@@ -1,7 +1,7 @@
 [
     {
         "name": "Energy",
-        "prefix": "E",
+        "prefix": "-E",
         "type": "number",
         "defaultValue": "7",
         "min": 1,

@@ -85,11 +85,18 @@ def update_title_metadata_with_tags(original_title, tags, tag_config=None):
 
 def apply_tags_to_group(file_group, tags):
     """
-    Applies custom tags to a group of files (e.g., .flac and .aiff).
-    Renames the files and/or writes custom metadata based on settings.
+    Applies custom tags to a group of files in the group (e.g., .flac, .mp3, .wav).
+
+    Returns a list of mappings {"old_path": str, "new_path": str} for each file,
+    so callers can update caches after potential renames.
+
+    Behavior:
+    - Filename tagging does not depend on metadata being writable.
+    - If no files were updated (neither metadata saved nor rename), raises an error
+      so the API can surface a failure instead of silently succeeding.
     """
     if not file_group:
-        return
+        return []
 
     # Get current settings to determine tag placement
     settings = config.load_settings()
@@ -98,7 +105,6 @@ def apply_tags_to_group(file_group, tags):
     # Since all files in the group should have the same base name, we can use the first one.
     first_file_path = file_group[0]
     directory = os.path.dirname(first_file_path)
-    original_basename = os.path.basename(os.path.splitext(first_file_path)[0])
 
     if not any(tags.values()):
         logging.warning("No valid tag values provided to apply.")
@@ -119,53 +125,76 @@ def apply_tags_to_group(file_group, tags):
         if 'name' in tag_def and 'prefix' in tag_def:
             tag_config[tag_def['name'].lower()] = {'prefix': tag_def['prefix']}
 
+    any_success = False
+    results = []
+
     for old_path in file_group:
-        try:
-            ext = os.path.splitext(old_path)[1]
-            new_path = old_path  # Default to same path
+        new_path = old_path  # default
+        file_success = False
 
-            # 1. Load the audio file for metadata operations
-            audio = mutagen.File(old_path, easy=True)
-            if audio is None:
-                raise TypeError("Could not load file with mutagen.")
-
-            # Get original title for metadata updates
-            original_title = ""
-            if hasattr(audio, 'get'):  # FLAC
-                original_title = audio.get('title', [''])[0]
-            elif hasattr(audio, 'tags') and hasattr(audio.tags, 'get'):  # ID3
-                title_tag = audio.tags.get('TIT2')
-                original_title = title_tag.text[0] if title_tag else ""
-            
-            if not original_title:
-                original_title = os.path.splitext(os.path.basename(old_path))[0]
-
-            # 2. Apply tags based on settings
-            if tag_placement in ['title', 'both']:
-                # Update title metadata with tags
-                updated_title = update_title_metadata_with_tags(original_title, tags, tag_config)
-                audio['TITLE'] = updated_title
-                logging.info(f"Updated title metadata: '{original_title}' -> '{updated_title}'")
-
-            if tag_placement in ['filename', 'both']:
-                # Update filename with tags
+        # 1) If filename tagging is enabled, compute the target filename up-front
+        if tag_placement in ['filename', 'both']:
+            try:
                 current_filename = os.path.basename(old_path)
                 new_filename = update_filename_with_tags(current_filename, tags, tag_config)
                 new_path = os.path.join(directory, new_filename)
+            except Exception as e:
+                logging.error("Failed to compute new filename for '%s': %s", os.path.basename(old_path), e)
 
-            # 3. Also write the raw tag values to metadata for reference
-            for tag_name, tag_value in tags.items():
-                if tag_value:
-                    audio[tag_name.upper()] = str(tag_value)
+        # 2) Try metadata tagging (best-effort)
+        try:
+            audio = mutagen.File(old_path, easy=True)
+            if audio is not None:
+                # Determine original title safely
+                original_title = ""
+                if hasattr(audio, 'get'):
+                    original_title = audio.get('title', [''])[0]
+                elif hasattr(audio, 'tags') and hasattr(audio.tags, 'get'):
+                    title_tag = audio.tags.get('TIT2')
+                    original_title = title_tag.text[0] if title_tag else ""
+                if not original_title:
+                    original_title = os.path.splitext(os.path.basename(old_path))[0]
 
-            # 4. Save metadata changes
-            audio.save()
-            logging.info("Saved metadata to '%s'", os.path.basename(old_path))
+                if tag_placement in ['title', 'both']:
+                    updated_title = update_title_metadata_with_tags(original_title, tags, tag_config)
+                    try:
+                        audio['TITLE'] = updated_title
+                    except Exception:
+                        # Some containers might not support TITLE this way; ignore
+                        pass
+                    logging.info("Updated title metadata: '%s' -> '%s'", original_title, updated_title)
 
-            # 5. Rename the file if filename tagging is enabled and path changed
-            if tag_placement in ['filename', 'both'] and old_path != new_path:
-                os.rename(old_path, new_path)
-                logging.info("Renamed '%s' to '%s'", os.path.basename(old_path), os.path.basename(new_path))
+                # Also write raw tag values to metadata for reference where possible
+                for tag_name, tag_value in tags.items():
+                    if tag_value:
+                        try:
+                            audio[tag_name.upper()] = str(tag_value)
+                        except Exception:
+                            pass
 
+                try:
+                    audio.save()
+                    file_success = True
+                    logging.info("Saved metadata to '%s'", os.path.basename(old_path))
+                except Exception as e:
+                    logging.warning("Could not save metadata for '%s': %s", os.path.basename(old_path), e)
         except Exception as e:
-            logging.error("Failed to process file '%s': %s", os.path.basename(old_path), e)
+            logging.warning("Failed to open file for metadata '%s': %s", os.path.basename(old_path), e)
+
+        # 3) Perform filename rename if enabled, regardless of metadata success
+        if tag_placement in ['filename', 'both'] and old_path != new_path:
+            try:
+                os.rename(old_path, new_path)
+                file_success = True
+                logging.info("Renamed '%s' to '%s'", os.path.basename(old_path), os.path.basename(new_path))
+            except Exception as e:
+                logging.error("Failed to rename '%s' -> '%s': %s", os.path.basename(old_path), os.path.basename(new_path), e)
+
+        any_success = any_success or file_success
+        results.append({"old_path": old_path, "new_path": new_path})
+
+    if not any_success:
+        # Ensure the caller can surface a meaningful error instead of silent success
+        raise RuntimeError("Failed to apply tags to all files in group: metadata not writable and filename rename failed")
+
+    return results

@@ -1,3 +1,52 @@
+// Global notification function
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.textContent = message;
+    
+    const bgColors = {
+        success: '#4caf50',
+        error: '#f44336',
+        warning: '#ff9800',
+        info: '#2196f3'
+    };
+    
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background-color: ${bgColors[type] || bgColors.info};
+        color: white;
+        padding: 15px 20px;
+        border-radius: 4px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        z-index: 1001;
+        opacity: 0;
+        transform: translateY(-20px);
+        transition: all 0.3s ease;
+        max-width: 400px;
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Animate in
+    setTimeout(() => {
+        notification.style.opacity = '1';
+        notification.style.transform = 'translateY(0)';
+    }, 10);
+    
+    // Remove after 4 seconds
+    setTimeout(() => {
+        notification.style.opacity = '0';
+        notification.style.transform = 'translateY(-20px)';
+        setTimeout(() => {
+            if (notification.parentNode) {
+                notification.parentNode.removeChild(notification);
+            }
+        }, 300);
+    }, 4000);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     let table = null;
 
@@ -172,7 +221,22 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = cell.getRow().getData();
                 if (data.isGroup) return '';
                 
-                return '<button class="btn-apply" onclick="tagTrackFromTable(this)">Apply Tags</button>';
+                return '<button class="btn-apply">Apply Tags</button>';
+            },
+            cellClick: function(e, cell) {
+                const data = cell.getRow().getData();
+                if (data.isGroup) {
+                    showNotification('Cannot tag group rows directly', 'warning');
+                    return;
+                }
+                
+                const button = e.target;
+                if (button.classList.contains('btn-apply')) {
+                    tagTrack({
+                        node: { data: data },
+                        eGridCell: { querySelector: () => button }
+                    });
+                }
             }
         };
 
@@ -242,18 +306,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    // Global function for tag application (called from button onclick)
-    window.tagTrackFromTable = function(button) {
-        // Find the row data
-        const cell = button.closest('.tabulator-cell');
-        const row = table.getRow(cell.closest('.tabulator-row'));
-        const rowData = row.getData();
-        
-        tagTrack({
-            node: { data: rowData },
-            eGridCell: { querySelector: () => button }
-        });
-    };
 
     // Fetch tags and initialize table
     fetch('/api/tags')
@@ -567,54 +619,6 @@ document.addEventListener('DOMContentLoaded', () => {
             });
     };
 
-    // Notification function for user feedback
-    function showNotification(message, type = 'info') {
-        const notification = document.createElement('div');
-        notification.className = `notification notification-${type}`;
-        notification.textContent = message;
-        
-        const bgColors = {
-            success: '#4caf50',
-            error: '#f44336',
-            warning: '#ff9800',
-            info: '#2196f3'
-        };
-        
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background-color: ${bgColors[type] || bgColors.info};
-            color: white;
-            padding: 15px 20px;
-            border-radius: 4px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            z-index: 1001;
-            opacity: 0;
-            transform: translateY(-20px);
-            transition: all 0.3s ease;
-            max-width: 400px;
-        `;
-        
-        document.body.appendChild(notification);
-        
-        // Animate in
-        setTimeout(() => {
-            notification.style.opacity = '1';
-            notification.style.transform = 'translateY(0)';
-        }, 10);
-        
-        // Remove after 4 seconds
-        setTimeout(() => {
-            notification.style.opacity = '0';
-            notification.style.transform = 'translateY(-20px)';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification);
-                }
-            }, 300);
-        }, 4000);
-    }
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
@@ -692,6 +696,10 @@ function tagTrack(params) {
                     Object.assign(node.data, tagsToApply);
                     
                     showNotification(`Successfully tagged ${node.data.filename}`, 'success');
+                    // Refresh the grid so renamed files/groups are reflected immediately
+                    if (typeof loadFilesIntoTable === 'function') {
+                        loadFilesIntoTable(true);
+                    }
                 } else {
                     throw new Error(data.message || 'Unknown error occurred');
                 }

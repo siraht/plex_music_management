@@ -8,6 +8,7 @@ from mutagen.aiff import AIFF
 from mutagen.mp3 import MP3
 from mutagen.wave import WAVE
 import json
+import re
 from datetime import datetime
 
 import config
@@ -18,6 +19,25 @@ from filename_validator import FilenameValidator
 from duplicate_detector import AdvancedDuplicateDetector
 import threading
 import time
+
+# Helper function to strip existing tags from filename
+def strip_existing_tags_from_basename(basename):
+    """
+    Strip existing tag patterns from basename for consistent grouping.
+    """
+    import re
+    # Remove patterns like --E125, --T7, -E125, etc.
+    patterns = [
+        r"\s+--[A-Z]\w+",  # Old format (--E125)
+        r"\s+-[A-Z]\w+",   # New format (-E125)
+        r"\s+--[A-Z][0-9]+", # Specific energy format (--E125)
+        r"\s+-[A-Z][0-9]+"   # Specific energy format (-E125)
+    ]
+    clean_basename = basename
+    for pattern in patterns:
+        clean_basename = re.sub(pattern, "", clean_basename, flags=re.IGNORECASE)
+    return clean_basename.strip()
+
 
 # Configure Flask
 app = Flask(__name__)
@@ -91,7 +111,8 @@ def scan_files_and_group_with_cache(force_rescan=False):
     
     # Process files using cache
     for file_path in all_audio_files:
-        basename = os.path.splitext(os.path.basename(file_path))[0]
+        raw_basename = os.path.splitext(os.path.basename(file_path))[0]
+        basename = strip_existing_tags_from_basename(raw_basename)
         group_key = os.path.join(os.path.dirname(file_path), basename)
         
         if group_key not in file_groups:
@@ -304,18 +325,35 @@ def tag_file():
         }), 400
 
     try:
-        # Apply tags to all files in the group
-        apply_tags_to_group(file_group['files'], tags_to_apply)
-        
-        # Update cache for all files in the group with new tag data
-        for file_path in file_group['files']:
-            file_data = tag_reader.get_comprehensive_file_data(file_path)
-            cache_manager.update_file_cache(
-                file_path,
-                file_data['metadata'],
-                file_data['current_tags']
-            )
-        
+        # Apply tags to all files in the group and get path mappings
+        path_results = apply_tags_to_group(file_group['files'], tags_to_apply)
+
+        # Refresh cache to reflect any renames and updated tags
+        # Prefer precise updates using returned mappings
+        for item in path_results:
+            old_path = item.get('old_path')
+            new_path = item.get('new_path') or old_path
+            # If renamed, remove old cache entry first
+            if new_path != old_path:
+                try:
+                    cache_manager.remove_file_from_cache(old_path)
+                except Exception:
+                    pass
+            # Update cache with fresh metadata/tags for the new/current path
+            try:
+                file_data = tag_reader.get_comprehensive_file_data(new_path)
+                cache_manager.update_file_cache(
+                    new_path,
+                    file_data['metadata'],
+                    file_data['current_tags']
+                )
+            except Exception as e:
+                logging.warning(f"Cache update failed for {new_path}: {e}")
+
+        # Optionally trigger a rescan of groups so UI immediately reflects changes
+        # (kept lightweight since cache is already updated)
+        # grouped_files = scan_files_and_group_with_cache(force_rescan=False)
+
         return jsonify({'status': 'success', 'message': f'Tagged {os.path.basename(group_key)}'})
     except Exception as e:
         logging.error(f"Error applying tags: {e}")
