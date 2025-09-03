@@ -1,54 +1,184 @@
-// Global notification function
-function showNotification(message, type = 'info') {
-    const notification = document.createElement('div');
-    notification.className = `notification notification-${type}`;
-    notification.textContent = message;
+// Global notification system with progress support
+const notificationManager = {
+    notifications: new Map(),
+    container: null,
     
-    const bgColors = {
-        success: '#4caf50',
-        error: '#f44336',
-        warning: '#ff9800',
-        info: '#2196f3'
-    };
+    getContainer() {
+        if (!this.container) {
+            this.container = document.getElementById('notification-container');
+            if (!this.container) {
+                this.container = document.createElement('div');
+                this.container.id = 'notification-container';
+                this.container.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    z-index: 1001;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                    pointer-events: none;
+                `;
+                document.body.appendChild(this.container);
+            }
+        }
+        return this.container;
+    },
     
-    notification.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        background-color: ${bgColors[type] || bgColors.info};
-        color: white;
-        padding: 15px 20px;
-        border-radius: 4px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-        z-index: 1001;
-        opacity: 0;
-        transform: translateY(-20px);
-        transition: all 0.3s ease;
-        max-width: 400px;
-    `;
+    create(id, message, type = 'info', options = {}) {
+        const container = this.getContainer();
+        
+        // Remove existing notification with same ID if exists
+        if (this.notifications.has(id)) {
+            this.remove(id);
+        }
+        
+        const notification = document.createElement('div');
+        notification.className = `notification notification-${type}`;
+        notification.dataset.notificationId = id;
+        
+        const bgColors = {
+            success: '#4caf50',
+            error: '#f44336',
+            warning: '#ff9800',
+            info: '#2196f3'
+        };
+        
+        // Create notification content
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'notification-content';
+        contentDiv.innerHTML = `
+            <div class="notification-message">${message}</div>
+            ${options.showProgress ? '<div class="notification-progress"></div>' : ''}
+        `;
+        notification.appendChild(contentDiv);
+        
+        notification.style.cssText = `
+            background-color: ${bgColors[type] || bgColors.info};
+            color: white;
+            padding: 15px 20px;
+            border-radius: 4px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            opacity: 0;
+            transform: translateX(20px);
+            transition: all 0.3s ease;
+            max-width: 400px;
+            word-wrap: break-word;
+            pointer-events: auto;
+        `;
+        
+        container.appendChild(notification);
+        this.notifications.set(id, {
+            element: notification,
+            timeout: null,
+            persistent: options.persistent || false
+        });
+        
+        // Animate in
+        requestAnimationFrame(() => {
+            notification.style.opacity = '1';
+            notification.style.transform = 'translateX(0)';
+        });
+        
+        // Auto-remove if not persistent
+        if (!options.persistent) {
+            const timeout = setTimeout(() => {
+                this.remove(id);
+            }, options.duration || 4000);
+            this.notifications.get(id).timeout = timeout;
+        }
+        
+        return notification;
+    },
     
-    document.body.appendChild(notification);
+    update(id, message, progress = null) {
+        const notif = this.notifications.get(id);
+        if (!notif) return;
+        
+        const messageElement = notif.element.querySelector('.notification-message');
+        if (messageElement) {
+            messageElement.innerHTML = message;
+        }
+        
+        if (progress !== null) {
+            const progressElement = notif.element.querySelector('.notification-progress');
+            if (progressElement) {
+                progressElement.innerHTML = `
+                    <div class="progress-bar">
+                        <div class="progress-fill" style="width: ${progress}%"></div>
+                    </div>
+                    <div class="progress-text">${Math.round(progress)}%</div>
+                `;
+            }
+        }
+    },
     
-    // Animate in
-    setTimeout(() => {
-        notification.style.opacity = '1';
-        notification.style.transform = 'translateY(0)';
-    }, 10);
-    
-    // Remove after 4 seconds
-    setTimeout(() => {
-        notification.style.opacity = '0';
-        notification.style.transform = 'translateY(-20px)';
+    remove(id) {
+        const notif = this.notifications.get(id);
+        if (!notif) return;
+        
+        if (notif.timeout) {
+            clearTimeout(notif.timeout);
+        }
+        
+        notif.element.style.opacity = '0';
+        notif.element.style.transform = 'translateX(20px)';
+        
         setTimeout(() => {
-            if (notification.parentNode) {
-                notification.parentNode.removeChild(notification);
+            if (notif.element.parentNode) {
+                notif.element.parentNode.removeChild(notif.element);
+            }
+            this.notifications.delete(id);
+            
+            // Remove container if empty
+            if (this.container && this.container.children.length === 0) {
+                this.container.remove();
+                this.container = null;
             }
         }, 300);
-    }, 4000);
+    }
+};
+
+// Backward compatible showNotification function
+function showNotification(message, type = 'info') {
+    const id = 'notification-' + Date.now() + '-' + Math.random();
+    notificationManager.create(id, message, type);
 }
+
+// Progress notification helper
+function showProgressNotification(id, message, type = 'info') {
+    return notificationManager.create(id, message, type, {
+        persistent: true,
+        showProgress: true
+    });
+}
+
+// Update progress helper with throttling for performance
+const progressUpdater = {
+    lastUpdate: {},
+    minInterval: 50, // Minimum 50ms between updates
+    
+    update(id, message, progress) {
+        const now = Date.now();
+        const lastTime = this.lastUpdate[id] || 0;
+        
+        // Throttle updates to every 50ms minimum
+        if (now - lastTime < this.minInterval && progress < 100) {
+            return;
+        }
+        
+        this.lastUpdate[id] = now;
+        requestAnimationFrame(() => {
+            notificationManager.update(id, message, progress);
+        });
+    }
+};
 
 document.addEventListener('DOMContentLoaded', () => {
     let table = null;
+
+    // Show initial loading notification
+    // Initial loading handled by loadFilesIntoTable with progress
 
     // Transform flat track data into hierarchical tree structure for Tabulator
     function transformDataToTreeStructure(data) {
@@ -265,23 +395,55 @@ document.addEventListener('DOMContentLoaded', () => {
         loadFilesIntoTable();
     }
 
-    // Load files and transform to tree structure
+    // Load files and transform to tree structure with progress
     function loadFilesIntoTable(forceRefresh = false) {
         const url = forceRefresh ? '/api/files/refresh' : '/api/files';
+        const progressId = forceRefresh ? 'refresh-progress' : 'cache-progress';
+        const initialMessage = forceRefresh ? 'Starting file refresh...' : 'Loading from cache...';
+        
+        // Show progress notification
+        showProgressNotification(progressId, initialMessage, 'info');
+        
+        // Simulate progress updates for better UX
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+            progress = Math.min(progress + Math.random() * 15, 90);
+            progressUpdater.update(
+                progressId,
+                forceRefresh ? `Scanning files... (this may take a moment)` : `Loading cache...`,
+                progress
+            );
+        }, 300);
         
         fetch(url)
             .then(response => response.json())
             .then(data => {
+                clearInterval(progressInterval);
+                
+                // Update to processing phase
+                notificationManager.update(progressId, `Processing ${data.length} tracks...`, 95);
+                
                 if (table) {
                     // Transform flat data to tree structure
                     const treeData = transformDataToTreeStructure(data);
                     table.setData(treeData);
-                    showNotification(`Loaded ${data.length} tracks${forceRefresh ? ' (force refreshed)' : ''} in ${treeData.length} groups`, 'success');
+                    
+                    // Complete and remove progress notification
+                    notificationManager.update(progressId, `Completed!`, 100);
+                    setTimeout(() => {
+                        notificationManager.remove(progressId);
+                        showNotification(
+                            `Loaded ${data.length} tracks${forceRefresh ? ' (refreshed)' : ' (from cache)'} in ${treeData.length} groups`,
+                            'success'
+                        );
+                    }, 500);
                 }
             })
             .catch(error => {
+                clearInterval(progressInterval);
                 console.error('Error loading files:', error);
-                showNotification('Error loading files', 'error');
+                notificationManager.remove(progressId);
+                showNotification('Error loading files: ' + error.message, 'error');
             });
     }
 
@@ -308,13 +470,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     // Fetch tags and initialize table
+    showNotification('Loading tag configuration...', 'info');
     fetch('/api/tags')
         .then(response => response.json())
         .then(tags => {
+            showNotification('Initializing table...', 'info');
             initializeTable(tags);
         })
         .catch(error => {
             console.error('Error loading tags:', error);
+            showNotification('Error loading tags, initializing with defaults', 'warning');
             initializeTable([]); // Initialize with empty tags
         });
 
@@ -574,12 +739,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Cache management functions (moved outside DOMContentLoaded)
     window.refreshFiles = function() {
-        showNotification('Refreshing all files...', 'info');
         loadFilesIntoTable(true);
     };
 
     window.clearCache = function() {
         if (confirm('Are you sure you want to clear the cache? This will force a full rescan on the next load.')) {
+            showNotification('Clearing cache...', 'info');
             fetch('/api/cache/clear', {
                 method: 'POST',
                 headers: {

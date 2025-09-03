@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Progress Notification Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+        }
+        button {
+            margin: 10px;
+            padding: 10px 20px;
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #1976d2;
+        }
+        /* Include notification styles */
+        #notification-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1001;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+        .notification {
+            padding: 15px 20px;
+            border-radius: 4px;
+            color: white;
+            font-weight: 500;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            max-width: 400px;
+            word-wrap: break-word;
+            pointer-events: auto;
+            animation: slideIn 0.3s ease-out;
+        }
+        .notification-content {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .notification-progress {
+            margin-top: 8px;
+        }
+        .progress-bar {
+            height: 4px;
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 4px;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.9);
+            border-radius: 2px;
+            transition: width 0.2s ease;
+        }
+        .progress-text {
+            font-size: 12px;
+            opacity: 0.9;
+            text-align: right;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Progress Notification Test</h1>
+    <button onclick="testCacheLoading()">Test Cache Loading Progress</button>
+    <button onclick="testFileRefresh()">Test File Refresh Progress</button>
+    <button onclick="testMultipleNotifications()">Test Multiple Notifications</button>
+    
+    <script>
+        // Copy the notification manager code here for testing
+        const notificationManager = {
+            notifications: new Map(),
+            container: null,
+            
+            getContainer() {
+                if (!this.container) {
+                    this.container = document.getElementById('notification-container');
+                    if (!this.container) {
+                        this.container = document.createElement('div');
+                        this.container.id = 'notification-container';
+                        this.container.style.cssText = `
+                            position: fixed;
+                            top: 20px;
+                            right: 20px;
+                            z-index: 1001;
+                            display: flex;
+                            flex-direction: column;
+                            gap: 10px;
+                            pointer-events: none;
+                        `;
+                        document.body.appendChild(this.container);
+                    }
+                }
+                return this.container;
+            },
+            
+            create(id, message, type = 'info', options = {}) {
+                const container = this.getContainer();
+                
+                if (this.notifications.has(id)) {
+                    this.remove(id);
+                }
+                
+                const notification = document.createElement('div');
+                notification.className = `notification notification-${type}`;
+                notification.dataset.notificationId = id;
+                
+                const bgColors = {
+                    success: '#4caf50',
+                    error: '#f44336',
+                    warning: '#ff9800',
+                    info: '#2196f3'
+                };
+                
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'notification-content';
+                contentDiv.innerHTML = `
+                    <div class="notification-message">${message}</div>
+                    ${options.showProgress ? '<div class="notification-progress"></div>' : ''}
+                `;
+                notification.appendChild(contentDiv);
+                
+                notification.style.cssText = `
+                    background-color: ${bgColors[type] || bgColors.info};
+                    color: white;
+                    padding: 15px 20px;
+                    border-radius: 4px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    opacity: 0;
+                    transform: translateX(20px);
+                    transition: all 0.3s ease;
+                    max-width: 400px;
+                    word-wrap: break-word;
+                    pointer-events: auto;
+                `;
+                
+                container.appendChild(notification);
+                this.notifications.set(id, {
+                    element: notification,
+                    timeout: null,
+                    persistent: options.persistent || false
+                });
+                
+                requestAnimationFrame(() => {
+                    notification.style.opacity = '1';
+                    notification.style.transform = 'translateX(0)';
+                });
+                
+                if (!options.persistent) {
+                    const timeout = setTimeout(() => {
+                        this.remove(id);
+                    }, options.duration || 4000);
+                    this.notifications.get(id).timeout = timeout;
+                }
+                
+                return notification;
+            },
+            
+            update(id, message, progress = null) {
+                const notif = this.notifications.get(id);
+                if (!notif) return;
+                
+                const messageElement = notif.element.querySelector('.notification-message');
+                if (messageElement) {
+                    messageElement.innerHTML = message;
+                }
+                
+                if (progress !== null) {
+                    const progressElement = notif.element.querySelector('.notification-progress');
+                    if (progressElement) {
+                        progressElement.innerHTML = `
+                            <div class="progress-bar">
+                                <div class="progress-fill" style="width: ${progress}%"></div>
+                            </div>
+                            <div class="progress-text">${Math.round(progress)}%</div>
+                        `;
+                    }
+                }
+            },
+            
+            remove(id) {
+                const notif = this.notifications.get(id);
+                if (!notif) return;
+                
+                if (notif.timeout) {
+                    clearTimeout(notif.timeout);
+                }
+                
+                notif.element.style.opacity = '0';
+                notif.element.style.transform = 'translateX(20px)';
+                
+                setTimeout(() => {
+                    if (notif.element.parentNode) {
+                        notif.element.parentNode.removeChild(notif.element);
+                    }
+                    this.notifications.delete(id);
+                    
+                    if (this.container && this.container.children.length === 0) {
+                        this.container.remove();
+                        this.container = null;
+                    }
+                }, 300);
+            }
+        };
+
+        function showNotification(message, type = 'info') {
+            const id = 'notification-' + Date.now() + '-' + Math.random();
+            notificationManager.create(id, message, type);
+        }
+
+        function showProgressNotification(id, message, type = 'info') {
+            return notificationManager.create(id, message, type, {
+                persistent: true,
+                showProgress: true
+            });
+        }
+
+        // Test functions
+        function testCacheLoading() {
+            const progressId = 'cache-test';
+            showProgressNotification(progressId, 'Loading from cache...', 'info');
+            
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += Math.random() * 20;
+                if (progress >= 100) {
+                    progress = 100;
+                    clearInterval(interval);
+                    notificationManager.update(progressId, 'Cache loaded successfully!', progress);
+                    setTimeout(() => {
+                        notificationManager.remove(progressId);
+                        showNotification('Loaded 1,234 tracks from cache', 'success');
+                    }, 1000);
+                } else {
+                    notificationManager.update(progressId, `Loading cache... (${Math.floor(progress * 12.34)} files)`, progress);
+                }
+            }, 200);
+        }
+
+        function testFileRefresh() {
+            const progressId = 'refresh-test';
+            showProgressNotification(progressId, 'Starting file refresh...', 'info');
+            
+            let progress = 0;
+            let fileCount = 0;
+            const totalFiles = 2500;
+            
+            const interval = setInterval(() => {
+                progress += Math.random() * 10;
+                fileCount = Math.floor((progress / 100) * totalFiles);
+                
+                if (progress >= 100) {
+                    progress = 100;
+                    fileCount = totalFiles;
+                    clearInterval(interval);
+                    notificationManager.update(progressId, 'Refresh completed!', progress);
+                    setTimeout(() => {
+                        notificationManager.remove(progressId);
+                        showNotification(`Refreshed ${totalFiles} tracks successfully`, 'success');
+                    }, 1000);
+                } else {
+                    notificationManager.update(progressId, `Scanning: ${fileCount}/${totalFiles} files...`, progress);
+                }
+            }, 300);
+        }
+
+        function testMultipleNotifications() {
+            showNotification('First notification', 'info');
+            setTimeout(() => showNotification('Second notification', 'warning'), 200);
+            setTimeout(() => showNotification('Third notification', 'success'), 400);
+            setTimeout(() => showNotification('Fourth notification', 'error'), 600);
+        }
+    </script>
+</body>
+</html>

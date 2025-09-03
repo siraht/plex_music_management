@@ -597,19 +597,56 @@ header {
   transform: none;
 }
 
+
 /* Notifications */
-.notification {
+#notification-container {
   position: fixed;
   top: 20px;
   right: 20px;
+  z-index: 1001;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: none;
+}
+
+.notification {
   padding: 15px 20px;
   border-radius: 4px;
   color: white;
   font-weight: 500;
   box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-  z-index: 1001;
   max-width: 400px;
   word-wrap: break-word;
+  pointer-events: auto;
+  animation: slideIn 0.3s ease-out;
+}
+
+.notification-success {
+  background-color: #4caf50;
+}
+
+.notification-error {
+  background-color: #f44336;
+}
+
+.notification-warning {
+  background-color: #ff9800;
+}
+
+.notification-info {
+  background-color: #2196f3;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 /* CDJ Filename Length Validation Styles */
@@ -859,4 +896,36 @@ header {
 
 .tabulator.tabulator-dark .tabulator-row:hover {
   background-color: rgba(255, 255, 255, 0.05);
+}
+
+/* Progress bar styles */
+.notification-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.notification-progress {
+    margin-top: 8px;
+}
+
+.progress-bar {
+    height: 4px;
+    background-color: rgba(255, 255, 255, 0.3);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.progress-fill {
+    height: 100%;
+    background-color: rgba(255, 255, 255, 0.9);
+    border-radius: 2px;
+    transition: width 0.2s ease;
+}
+
+.progress-text {
+    font-size: 12px;
+    opacity: 0.9;
+    text-align: right;
 }
