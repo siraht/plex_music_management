@@ -15,6 +15,9 @@ from tag_manager import apply_tags_to_group
 from cache_manager import FileCacheManager
 from enhanced_tag_reader import EnhancedTagReader
 from filename_validator import FilenameValidator
+from duplicate_detector import AdvancedDuplicateDetector
+import threading
+import time
 
 # Configure Flask
 app = Flask(__name__)
@@ -23,6 +26,11 @@ app = Flask(__name__)
 cache_manager = FileCacheManager()
 tag_reader = EnhancedTagReader()
 filename_validator = FilenameValidator()
+# Initialize duplicate detector
+duplicate_detector = AdvancedDuplicateDetector(cache_manager)
+
+# Global variables for duplicate scan progress
+scan_progress = {"scanning": False, "progress": 0, "total": 0, "current_file": "", "results": None}
 
 # --- Tag Management Functions ---
 def load_tags():
@@ -373,6 +381,112 @@ def get_cache_stats():
     except Exception as e:
         logging.error(f"Error getting cache stats: {e}")
         return jsonify({'status': 'error', 'message': f'Error getting cache stats: {str(e)}'}), 500
+
+
+# ===== DUPLICATE DETECTION ROUTES ===== 
+
+@app.route("/duplicates") 
+def duplicates_page(): 
+    """Render the duplicates detection page""" 
+    return render_template("duplicates.html") 
+
+@app.route("/scan-duplicates", methods=["POST"]) 
+def start_duplicate_scan(): 
+    """Start scanning for duplicates in a separate thread""" 
+    global scan_progress 
+    
+    if scan_progress["scanning"]: 
+        return jsonify({"status": "error", "message": "Scan already in progress"}), 400 
+    
+    try: 
+        data = request.get_json() 
+        directory_path = data.get("directory", config.MUSIC_DIRECTORY) 
+        
+        if not os.path.exists(directory_path): 
+            return jsonify({"status": "error", "message": "Directory does not exist"}), 400 
+        
+        # Reset progress 
+        scan_progress = {"scanning": True, "progress": 0, "total": 0, "current_file": "", "results": None} 
+        
+        # Start scan in background thread 
+        scan_thread = threading.Thread(target=perform_duplicate_scan, args=(directory_path,)) 
+        scan_thread.daemon = True 
+        scan_thread.start() 
+        
+        return jsonify({"status": "started", "message": "Duplicate scan started"}) 
+    except Exception as e: 
+        logging.error(f"Error starting duplicate scan: {e}") 
+        scan_progress["scanning"] = False 
+        return jsonify({"status": "error", "message": str(e)}), 500 
+
+@app.route("/scan-duplicates/progress") 
+def get_scan_progress(): 
+    """Get current scan progress""" 
+    global scan_progress 
+    return jsonify(scan_progress) 
+
+@app.route("/scan-duplicates/results") 
+def get_scan_results(): 
+    """Get scan results""" 
+    global scan_progress 
+    
+    if scan_progress["results"] is None: 
+        return jsonify({"status": "no_results", "message": "No scan results available"}) 
+    
+    try: 
+        duplicates = scan_progress["results"] 
+        stats = duplicate_detector.get_duplicate_statistics(duplicates) 
+        
+        return jsonify({ 
+            "status": "completed", 
+            "duplicates": duplicates, 
+            "statistics": stats 
+        }) 
+    except Exception as e: 
+        logging.error(f"Error getting scan results: {e}") 
+        return jsonify({"status": "error", "message": str(e)}), 500 
+
+@app.route("/delete-duplicate", methods=["POST"]) 
+def delete_duplicate_file(): 
+    """Delete a duplicate file""" 
+    try: 
+        data = request.get_json() 
+        file_path = data.get("file_path") 
+        
+        if not file_path or not os.path.exists(file_path): 
+            return jsonify({"status": "error", "message": "File does not exist"}), 400 
+        
+        # Remove from cache first 
+        cache_manager.remove_file_from_cache(file_path) 
+        
+        # Delete the file 
+        os.remove(file_path) 
+        
+        logging.info(f"Deleted duplicate file: {file_path}") 
+        return jsonify({"status": "success", "message": "File deleted successfully"}) 
+    except Exception as e: 
+        logging.error(f"Error deleting file: {e}") 
+        return jsonify({"status": "error", "message": str(e)}), 500 
+
+def perform_duplicate_scan(directory_path): 
+    """Perform duplicate scan in background thread""" 
+    global scan_progress 
+    
+    def progress_callback(current, total, current_file): 
+        scan_progress["progress"] = current 
+        scan_progress["total"] = total 
+        scan_progress["current_file"] = os.path.basename(current_file) 
+    
+    try: 
+        duplicates = duplicate_detector.scan_for_duplicates(directory_path, progress_callback) 
+        scan_progress["results"] = duplicates 
+        scan_progress["scanning"] = False 
+        logging.info(f"Duplicate scan completed. Found {len(duplicates)} duplicate groups.") 
+    except Exception as e: 
+        logging.error(f"Error during duplicate scan: {e}") 
+        scan_progress["scanning"] = False 
+        scan_progress["results"] = [] 
+
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)

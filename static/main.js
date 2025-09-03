@@ -30,34 +30,6 @@ document.addEventListener('DOMContentLoaded', () => {
             sortable: true
         },
         {
-            field: 'filename_length',
-            headerName: 'Filename Length',
-            resizable: true,
-            sortable: true,
-            width: 150,
-            cellRenderer: params => {
-                const length = params.value || 0;
-                const hasWarning = params.data.has_filename_warning;
-                
-                let className = 'filename-length';
-                let icon = '';
-                
-                if (hasWarning) {
-                    className += ' filename-warning';
-                    icon = '⚠️ ';
-                    if (length > 265) {
-                        className += ' filename-critical';
-                        icon = '🔴 ';
-                    }
-                } else if (length > 240) {
-                    className += ' filename-caution';
-                    icon = '⚡ ';
-                }
-                
-                return `<span class="${className}" title="${hasWarning ? 'Filename too long for CDJ compatibility' : 'Filename length OK'}">${icon}${length}</span>`;
-            }
-        },
-        {
             field: 'formats',
             headerName: 'Available Formats',
             resizable: true,
@@ -81,13 +53,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const button = document.createElement('button');
             button.innerHTML = 'Apply Tags';
             button.classList.add('btn-apply');
-            
-            // Add warning class if filename is problematic
-            if (params.data.has_filename_warning) {
-                button.classList.add('btn-caution');
-                button.title = 'Warning: This file has a long filename that may not be compatible with CDJs';
-            }
-            
             button.addEventListener('click', () => tagTrack(params));
             params.eGridCell.addEventListener('click', (event) => event.stopPropagation());
             return button;
@@ -119,8 +84,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     input.dataset.tagName = tag.name.toLowerCase();
                     input.addEventListener('change', (e) => {
                         params.data[tag.name.toLowerCase()] = e.target.value;
-                        // Validate filename length as user types
-                        validateFilenameLength(params);
                     });
                     return input;
                 },
@@ -150,46 +113,6 @@ document.addEventListener('DOMContentLoaded', () => {
             agGrid.createGrid(gridDiv, gridOptions);
         });
 
-    function validateFilenameLength(params) {
-        // Get all tag values for this row
-        const tags = {};
-        const tagInputs = params.eGridCell.parentElement.querySelectorAll('.tag-input-grid');
-        tagInputs.forEach(input => {
-            tags[input.dataset.tagName] = input.value;
-        });
-
-        // Get the first file from the group to validate
-        const groupKey = params.data.group_key;
-        
-        // Make a validation request
-        fetch('/api/validate-filename', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                file_path: groupKey + '.flac', // Use group key as base
-                tags: tags
-            })
-        })
-        .then(response => response.json())
-        .then(data => {
-            const button = params.eGridCell.parentElement.querySelector('.btn-apply');
-            if (button) {
-                if (!data.is_valid) {
-                    button.classList.add('btn-caution');
-                    button.title = data.message + (data.suggested_filename ? `\nSuggested: ${data.suggested_filename}` : '');
-                } else {
-                    button.classList.remove('btn-caution');
-                    button.title = 'Apply tags to this track';
-                }
-            }
-        })
-        .catch(error => {
-            console.warn('Error validating filename:', error);
-        });
-    }
-
     function loadFilesIntoGrid(forceRefresh = false) {
         const url = forceRefresh ? '/api/files/refresh' : '/api/files';
         
@@ -198,65 +121,12 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(data => {
                 if (gridApi) {
                     gridApi.setGridOption('rowData', data);
-                    
-                    // Count filename warnings
-                    const warningCount = data.filter(item => item.has_filename_warning).length;
-                    const totalFiles = data.length;
-                    
-                    let message = `Loaded ${totalFiles} tracks${forceRefresh ? ' (force refreshed)' : ''}`;
-                    if (warningCount > 0) {
-                        message += ` - ${warningCount} files have long filenames ⚠️`;
-                        showNotification(message, 'warning');
-                    } else {
-                        showNotification(message, 'success');
-                    }
+                    showNotification(`Loaded ${data.length} tracks${forceRefresh ? ' (force refreshed)' : ''}`, 'success');
                 }
             })
             .catch(error => {
                 console.error('Error loading files:', error);
                 showNotification('Error loading files', 'error');
-            });
-    }
-
-    function showFilenameWarnings() {
-        fetch('/api/files/filename-warnings')
-            .then(response => response.json())
-            .then(data => {
-                const warnings = data.warnings || [];
-                const stats = data.stats || {};
-                
-                if (warnings.length === 0) {
-                    alert('No filename length warnings found. All files are CDJ-compatible!');
-                    return;
-                }
-                
-                // Create detailed warning message
-                let message = `CDJ Filename Compatibility Report:\n\n`;
-                message += `📊 Summary:\n`;
-                message += `• Total files: ${stats.total_files || 0}\n`;
-                message += `• Valid filenames: ${stats.valid_files || 0}\n`;
-                message += `• Warning files: ${stats.warning_files || 0}\n`;
-                message += `• Critical files: ${stats.critical_files || 0}\n\n`;
-                
-                if (warnings.length > 0) {
-                    message += `🔴 First ${Math.min(5, warnings.length)} problematic files:\n`;
-                    warnings.slice(0, 5).forEach(warning => {
-                        message += `• ${warning.filename.substring(0, 60)}${warning.filename.length > 60 ? '...' : ''}\n`;
-                        message += `  Length: ${warning.length} chars (${warning.excess_chars} over limit)\n\n`;
-                    });
-                    
-                    if (warnings.length > 5) {
-                        message += `... and ${warnings.length - 5} more files\n\n`;
-                    }
-                    
-                    message += `💡 Tip: Consider shortening artist/album names or using abbreviations to ensure CDJ compatibility.`;
-                }
-                
-                alert(message);
-            })
-            .catch(error => {
-                console.error('Error getting filename warnings:', error);
-                showNotification('Failed to get filename warnings', 'error');
             });
     }
 
@@ -515,6 +385,53 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Cache management functions
+    function refreshFiles() {
+        showNotification('Refreshing all files...', 'info');
+        loadFilesIntoGrid(true);
+    }
+
+    function clearCache() {
+        if (confirm('Are you sure you want to clear the cache? This will force a full rescan on the next load.')) {
+            fetch('/api/cache/clear', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showNotification('Cache cleared successfully', 'success');
+                } else {
+                    showNotification('Error clearing cache: ' + (data.message || 'Unknown error'), 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error clearing cache:', error);
+                showNotification('Failed to clear cache', 'error');
+            });
+        }
+    }
+
+    function showCacheStats() {
+        fetch('/api/cache/stats')
+            .then(response => response.json())
+            .then(data => {
+                if (data.total_cached_files !== undefined) {
+                    const lastUpdated = data.last_updated ? new Date(data.last_updated * 1000).toLocaleString() : 'Never';
+                    const message = `Cache Stats:\n• Total cached files: ${data.total_cached_files}\n• Last updated: ${lastUpdated}\n• Database: ${data.cache_db_path}`;
+                    alert(message);
+                } else {
+                    showNotification('Error getting cache stats: ' + (data.message || 'Unknown error'), 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error getting cache stats:', error);
+                showNotification('Failed to get cache stats', 'error');
+            });
+    }
+
+    // Cache management functions (moved outside DOMContentLoaded)
     window.refreshFiles = function() {
         showNotification('Refreshing all files...', 'info');
         loadFilesIntoGrid(true);
@@ -549,14 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(data => {
                 if (data.total_cached_files !== undefined) {
                     const lastUpdated = data.last_updated ? new Date(data.last_updated * 1000).toLocaleString() : 'Never';
-                    const fileStats = data.filename_stats || {};
-                    
-                    let message = `Cache Stats:\n• Total cached files: ${data.total_cached_files}\n• Last updated: ${lastUpdated}\n• Database: ${data.cache_db_path}`;
-                    
-                    if (fileStats.total_files) {
-                        message += `\n\nFilename Compatibility:\n• Valid filenames: ${fileStats.valid_files || 0}\n• Warning files: ${fileStats.warning_files || 0}\n• Critical files: ${fileStats.critical_files || 0}`;
-                    }
-                    
+                    const message = `Cache Stats:\n• Total cached files: ${data.total_cached_files}\n• Last updated: ${lastUpdated}\n• Database: ${data.cache_db_path}`;
                     alert(message);
                 } else {
                     showNotification('Error getting cache stats: ' + (data.message || 'Unknown error'), 'error');
@@ -567,8 +477,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 showNotification('Failed to get cache stats', 'error');
             });
     };
-
-    window.showFilenameWarnings = showFilenameWarnings;
 
     // Notification function for user feedback
     function showNotification(message, type = 'info') {
@@ -623,14 +531,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('keydown', (e) => {
         if (e.ctrlKey || e.metaKey) {
             switch(e.key) {
-                case 'r':
-                    e.preventDefault();
-                    refreshFiles();
-                    break;
-                case 'w':
-                    e.preventDefault();
-                    showFilenameWarnings();
-                    break;
             }
         }
     });
@@ -683,7 +583,7 @@ function tagTrack(params) {
                     tags: tagsToApply
                 })
             })
-            .then(response => response.json())
+            .then(response => response.ok ? response.json() : Promise.reject('Network response was not ok'))
             .then(data => {
                 if (data.status === 'success') {
                     button.textContent = '✓ Done';
@@ -698,17 +598,6 @@ function tagTrack(params) {
                     tagInputs.forEach(input => input.disabled = true);
                     
                     showNotification(`Successfully tagged ${node.data.filename}`, 'success');
-                } else if (data.status === 'error' && data.validation_errors) {
-                    // Handle filename validation errors
-                    let errorMessage = data.message + ':\n\n';
-                    data.validation_errors.forEach(error => {
-                        errorMessage += `• ${error.file}: ${error.message}\n`;
-                        if (error.suggested) {
-                            errorMessage += `  Suggested: ${error.suggested}\n`;
-                        }
-                    });
-                    errorMessage += '\n💡 Consider shortening the filename or using metadata-only tag placement.';
-                    alert(errorMessage);
                 } else {
                     throw new Error(data.message || 'Unknown error occurred');
                 }
@@ -716,12 +605,8 @@ function tagTrack(params) {
             .catch(error => {
                 console.error('Error:', error);
                 showNotification('Error: ' + (error.message || 'Failed to apply tags'), 'error');
-            })
-            .finally(() => {
                 button.disabled = false;
-                if (button.textContent === 'Processing...') {
-                    button.textContent = originalText;
-                }
+                button.textContent = originalText;
                 button.classList.remove('processing');
             });
         })

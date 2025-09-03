@@ -227,6 +227,19 @@ class FileCacheManager:
             logging.error(f"Error getting all cached files: {e}")
             return {}
     
+    def remove_file_from_cache(self, file_path): 
+        """Remove a specific file from the cache.""" 
+        try: 
+            with sqlite3.connect(self.db_path) as conn: 
+                cursor = conn.cursor() 
+                cursor.execute("DELETE FROM file_cache WHERE file_path = ?", (file_path,)) 
+                conn.commit() 
+                logging.info(f"Removed {file_path} from cache") 
+                 
+        except sqlite3.Error as e: 
+            logging.error(f"Error removing file from cache: {e}") 
+    
+
     def clear_cache(self):
         """Clear all cache entries."""
         try:

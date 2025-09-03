@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Duplicate Detection - Plex Tagger</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <style>
+        .duplicates-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .scan-controls {
+            background: var(--surface-color);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .scan-button {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .scan-button:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+        
+        .scan-button:disabled {
+            background: #666;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .progress-container {
+            display: none;
+            margin-top: 15px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: var(--border-color);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: var(--primary-color);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .progress-text {
+            margin-top: 10px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        
+        .stats-container {
+            display: none;
+            background: var(--surface-color);
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: var(--background-color);
+            border-radius: 6px;
+        }
+        
+        .stat-number {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 5px;
+        }
+        
+        .duplicates-results {
+            display: none;
+        }
+        
+        .duplicate-group {
+            background: var(--surface-color);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 20px;
+            overflow: hidden;
+        }
+        
+        .duplicate-group-header {
+            background: var(--background-color);
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .group-title {
+            font-weight: 600;
+            font-size: 16px;
+        }
+        
+        .group-id {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: monospace;
+        }
+        
+        .duplicate-files {
+            padding: 0;
+        }
+        
+        .duplicate-file {
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 15px;
+            align-items: center;
+            transition: background-color 0.2s ease;
+        }
+        
+        .duplicate-file:hover {
+            background: var(--hover-color);
+        }
+        
+        .duplicate-file:last-child {
+            border-bottom: none;
+        }
+        
+        .file-info {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 15px;
+            align-items: start;
+        }
+        
+        .file-main {
+            min-width: 0;
+        }
+        
+        .file-path {
+            font-weight: 500;
+            font-size: 14px;
+            word-break: break-all;
+            margin-bottom: 4px;
+        }
+        
+        .file-metadata {
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+        
+        .file-technical {
+            font-size: 12px;
+            color: var(--text-secondary);
+            text-align: right;
+        }
+        
+        .file-similarity {
+            text-align: center;
+        }
+        
+        .similarity-score {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .similarity-high {
+            background: rgba(34, 197, 94, 0.1);
+            color: #22c55e;
+        }
+        
+        .similarity-medium {
+            background: rgba(251, 191, 36, 0.1);
+            color: #fbbf24;
+        }
+        
+        .similarity-low {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+        }
+        
+        .file-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .delete-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .delete-btn:hover {
+            background: #dc2626;
+        }
+        
+        .keep-btn {
+            background: #22c55e;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .keep-btn:hover {
+            background: #16a34a;
+        }
+        
+        .best-match {
+            border-left: 4px solid var(--primary-color);
+        }
+        
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        
+        .loading::before {
+            content: "";
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-color);
+            border-top: 2px solid var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+        
+        .error-message {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Duplicate Detection</h1>
+            <div class="header-buttons">
+                <button class="btn" onclick="window.location.href='/'">Back to Main</button>
+            </div>
+        </header>
+        
+        <main class="duplicates-container">
+            <div class="scan-controls">
+                <h2>Scan for Duplicates</h2>
+                <p>This will scan your music directory for potential duplicate audio files using fuzzy matching on metadata and filenames.</p>
+                
+                <button id="scan-btn" class="scan-button" onclick="startDuplicateScan()">
+                    Start Duplicate Scan
+                </button>
+                
+                <div id="progress-container" class="progress-container">
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                    <div id="progress-text" class="progress-text">
+                        Preparing scan...
+                    </div>
+                </div>
+                
+                <div id="error-container"></div>
+            </div>
+            
+            <div id="stats-container" class="stats-container">
+                <h3>Scan Results</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div id="total-groups" class="stat-number">0</div>
+                        <div class="stat-label">Duplicate Groups</div>
+                    </div>
+                    <div class="stat-item">
+                        <div id="total-files" class="stat-number">0</div>
+                        <div class="stat-label">Duplicate Files</div>
+                    </div>
+                    <div class="stat-item">
+                        <div id="potential-savings" class="stat-number">0 MB</div>
+                        <div class="stat-label">Potential Savings</div>
+                    </div>
+                    <div class="stat-item">
+                        <div id="avg-per-group" class="stat-number">0</div>
+                        <div class="stat-label">Avg Files/Group</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="duplicates-results" class="duplicates-results">
+                <div id="results-content"></div>
+            </div>
+        </main>
+    </div>
+    
+    <script>
+        let scanInterval = null;
+        
+        function startDuplicateScan() {
+            const scanBtn = document.getElementById('scan-btn');
+            const progressContainer = document.getElementById('progress-container');
+            const statsContainer = document.getElementById('stats-container');
+            const resultsContainer = document.getElementById('duplicates-results');
+            const errorContainer = document.getElementById('error-container');
+            
+            // Reset UI
+            scanBtn.disabled = true;
+            scanBtn.textContent = 'Scanning...';
+            progressContainer.style.display = 'block';
+            statsContainer.style.display = 'none';
+            resultsContainer.style.display = 'none';
+            errorContainer.innerHTML = '';
+            
+            // Start scan
+            fetch('/scan-duplicates', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'started') {
+                    // Start progress polling
+                    pollScanProgress();
+                } else {
+                    throw new Error(data.message || 'Failed to start scan');
+                }
+            })
+            .catch(error => {
+                showError('Error starting scan: ' + error.message);
+                resetScanButton();
+            });
+        }
+        
+        function pollScanProgress() {
+            scanInterval = setInterval(() => {
+                fetch('/scan-duplicates/progress')
+                .then(response => response.json())
+                .then(data => {
+                    updateProgressUI(data);
+                    
+                    if (!data.scanning) {
+                        clearInterval(scanInterval);
+                        loadScanResults();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error polling progress:', error);
+                });
+            }, 1000);
+        }
+        
+        function updateProgressUI(progress) {
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            
+            if (progress.total > 0) {
+                const percentage = (progress.progress / progress.total) * 100;
+                progressFill.style.width = percentage + '%';
+                progressText.textContent = `Processing ${progress.progress}/${progress.total} files... ${progress.current_file}`;
+            } else {
+                progressText.textContent = 'Preparing scan...';
+            }
+        }
+        
+        function loadScanResults() {
+            fetch('/scan-duplicates/results')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'completed') {
+                    displayResults(data.duplicates, data.statistics);
+                } else if (data.status === 'no_results') {
+                    showNoResults();
+                } else {
+                    throw new Error(data.message || 'Failed to load results');
+                }
+                resetScanButton();
+            })
+            .catch(error => {
+                showError('Error loading results: ' + error.message);
+                resetScanButton();
+            });
+        }
+        
+        function displayResults(duplicates, statistics) {
+            const progressContainer = document.getElementById('progress-container');
+            const statsContainer = document.getElementById('stats-container');
+            const resultsContainer = document.getElementById('duplicates-results');
+            const resultsContent = document.getElementById('results-content');
+            
+            // Hide progress, show stats and results
+            progressContainer.style.display = 'none';
+            
+            if (duplicates.length > 0) {
+                statsContainer.style.display = 'block';
+                resultsContainer.style.display = 'block';
+                
+                // Update statistics
+                document.getElementById('total-groups').textContent = statistics.total_duplicate_groups;
+                document.getElementById('total-files').textContent = statistics.total_duplicate_files;
+                document.getElementById('potential-savings').textContent = statistics.potential_space_savings_mb + ' MB';
+                document.getElementById('avg-per-group').textContent = statistics.average_files_per_group;
+                
+                // Render duplicate groups
+                resultsContent.innerHTML = duplicates.map(group => renderDuplicateGroup(group)).join('');
+            } else {
+                showNoResults();
+            }
+        }
+        
+        function renderDuplicateGroup(group) {
+            return `
+                <div class="duplicate-group">
+                    <div class="duplicate-group-header">
+                        <div class="group-title">Duplicate Group (${group.files.length} files)</div>
+                        <div class="group-id">ID: ${group.group_id}</div>
+                    </div>
+                    <div class="duplicate-files">
+                        ${group.files.map((file, index) => renderDuplicateFile(file, index === 0)).join('')}
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderDuplicateFile(file, isBest) {
+            const similarityClass = file.similarity_score >= 90 ? 'similarity-high' : 
+                                  file.similarity_score >= 80 ? 'similarity-medium' : 'similarity-low';
+            
+            return `
+                <div class="duplicate-file ${isBest ? 'best-match' : ''}" data-file-path="${file.path}">
+                    <div class="file-info">
+                        <div class="file-main">
+                            <div class="file-path">${file.filename}</div>
+                            <div class="file-metadata">
+                                <strong>${file.title}</strong> by ${file.artist}<br>
+                                Album: ${file.album}
+                            </div>
+                        </div>
+                        <div class="file-technical">
+                            Size: ${formatFileSize(file.size)}<br>
+                            Duration: ${formatDuration(file.duration)}<br>
+                            Bitrate: ${file.bitrate} kbps<br>
+                            Format: ${file.file_extension.toUpperCase()}
+                        </div>
+                        <div class="file-similarity">
+                            <span class="similarity-score ${similarityClass}">
+                                ${file.similarity_score.toFixed(1)}%
+                            </span>
+                            ${isBest ? '<div style="font-size: 11px; color: var(--primary-color); margin-top: 4px;">BEST MATCH</div>' : ''}
+                        </div>
+                    </div>
+                    <div class="file-actions">
+                        ${!isBest ? `<button class="delete-btn" onclick="deleteDuplicateFile('${file.path}')">Delete</button>` : ''}
+                        <button class="keep-btn" onclick="keepFile('${file.path}')">Keep</button>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function deleteDuplicateFile(filePath) {
+            if (!confirm('Are you sure you want to delete this file? This action cannot be undone.')) {
+                return;
+            }
+            
+            fetch('/delete-duplicate', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({file_path: filePath})
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    // Remove the file from UI
+                    const fileElement = document.querySelector(`[data-file-path="${filePath}"]`);
+                    if (fileElement) {
+                        fileElement.remove();
+                    }
+                    
+                    // Check if group is now empty or has only one file
+                    const group = fileElement?.closest('.duplicate-group');
+                    if (group) {
+                        const remainingFiles = group.querySelectorAll('.duplicate-file');
+                        if (remainingFiles.length <= 1) {
+                            group.remove();
+                        }
+                    }
+                } else {
+                    alert('Error deleting file: ' + data.message);
+                }
+            })
+            .catch(error => {
+                alert('Error deleting file: ' + error.message);
+            });
+        }
+        
+        function keepFile(filePath) {
+            // Just visual feedback for now
+            const fileElement = document.querySelector(`[data-file-path="${filePath}"]`);
+            if (fileElement) {
+                fileElement.style.background = 'rgba(34, 197, 94, 0.1)';
+                setTimeout(() => {
+                    fileElement.style.background = '';
+                }, 2000);
+            }
+        }
+        
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+        
+        function formatDuration(seconds) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+        
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.innerHTML = `<div class="error-message">${message}</div>`;
+        }
+        
+        function showNoResults() {
+            const progressContainer = document.getElementById('progress-container');
+            const resultsContainer = document.getElementById('duplicates-results');
+            const resultsContent = document.getElementById('results-content');
+            
+            progressContainer.style.display = 'none';
+            resultsContainer.style.display = 'block';
+            resultsContent.innerHTML = '<div class="no-results"><h3>No Duplicates Found</h3><p>Great! No duplicate files were detected in your music library.</p></div>';
+        }
+        
+        function resetScanButton() {
+            const scanBtn = document.getElementById('scan-btn');
+            scanBtn.disabled = false;
+            scanBtn.textContent = 'Start Duplicate Scan';
+        }
+    </script>
+</body>
+</html>
