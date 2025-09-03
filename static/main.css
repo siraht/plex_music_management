@@ -929,3 +929,128 @@ header {
     opacity: 0.9;
     text-align: right;
 }
+
+/* Error Files Modal Styles */
+.btn-danger {
+    background-color: #f44336;
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #d32f2f;
+}
+
+.large-modal {
+    width: 90%;
+    max-width: 1200px;
+}
+
+.error-files-info {
+    margin-bottom: 20px;
+    padding: 15px;
+    background-color: rgba(244, 67, 54, 0.1);
+    border: 1px solid #f44336;
+    border-radius: 4px;
+}
+
+.error-files-info p {
+    margin: 0 0 10px 0;
+    font-weight: 600;
+}
+
+.modal-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.error-files-container {
+    max-height: 500px;
+    overflow-y: auto;
+    border: 1px solid #555;
+    border-radius: 4px;
+}
+
+#error-files-table {
+    width: 100%;
+    border-collapse: collapse;
+    background-color: #2a2a2a;
+}
+
+#error-files-table th,
+#error-files-table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #444;
+    vertical-align: top;
+}
+
+#error-files-table th {
+    background-color: #333;
+    font-weight: 600;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+#error-files-table tr:hover {
+    background-color: #333;
+}
+
+.error-message {
+    max-width: 300px;
+    word-wrap: break-word;
+    font-family: monospace;
+    font-size: 0.9em;
+    color: #ff9800;
+}
+
+.file-status {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.8em;
+    font-weight: 500;
+}
+
+.file-status.exists {
+    background-color: #4caf50;
+    color: white;
+}
+
+.file-status.missing {
+    background-color: #f44336;
+    color: white;
+}
+
+.file-path {
+    font-family: monospace;
+    font-size: 0.9em;
+    max-width: 250px;
+    word-wrap: break-word;
+}
+
+.timestamp {
+    font-family: monospace;
+    font-size: 0.85em;
+    color: #bbb;
+}
+
+/* Badge styles for buttons */
+.badge {
+    display: inline-block;
+    padding: 2px 6px;
+    margin-left: 5px;
+    background-color: #f44336;
+    color: white;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: bold;
+    min-width: 16px;
+    text-align: center;
+    line-height: 1.2;
+}
+
+.btn .badge {
+    position: relative;
+    top: -1px;
+}

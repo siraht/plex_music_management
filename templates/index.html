@@ -16,6 +16,7 @@
         <header>
             <h1>Plex Music Tagger</h1>
             <div class="header-buttons">
+                <button id="error-files-btn" class="btn btn-danger" onclick="showErrorFiles()">Error Files</button>
                 <button id="filename-warnings-btn" class="btn btn-warning" onclick="showFilenameWarnings()">CDJ Warnings</button>
                 <button id="cache-stats-btn" class="btn btn-info" onclick="showCacheStats()">Cache Stats</button>
                 <button id="clear-cache-btn" class="btn btn-warning" onclick="clearCache()">Clear Cache</button>
@@ -87,3 +88,40 @@
     <script src="{{ url_for('static', filename='main.js') }}"></script>
 </body>
 </html>
+
+    <!-- Error Files Modal -->
+    <div id="error-files-modal" class="modal">
+        <div class="modal-content large-modal">
+            <div class="modal-header">
+                <h2>Files with Processing Errors</h2>
+                <span class="close" onclick="closeErrorFilesModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="error-files-info">
+                    <p id="error-files-count">Loading error files...</p>
+                    <div class="modal-actions">
+                        <button class="btn btn-info" onclick="downloadErrorFilesList()">Download List</button>
+                        <button class="btn btn-warning" onclick="clearErrorFiles()">Clear Tracking</button>
+                        <button class="btn btn-danger" onclick="deleteSelectedErrorFiles(false)">Remove from DB</button>
+                        <button class="btn btn-danger" onclick="deleteSelectedErrorFiles(true)">Delete from Filesystem</button>
+                    </div>
+                </div>
+                <div class="error-files-container">
+                    <table id="error-files-table">
+                        <thead>
+                            <tr>
+                                <th><input type="checkbox" id="select-all-errors" onchange="toggleAllErrorFiles()"></th>
+                                <th>Filename</th>
+                                <th>Directory</th>
+                                <th>Error Message</th>
+                                <th>Timestamp</th>
+                                <th>File Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="error-files-tbody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>

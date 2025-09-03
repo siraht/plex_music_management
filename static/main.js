@@ -885,3 +885,221 @@ function tagTrack(params) {
             button.classList.remove('processing');
         });
 }
+
+// Error Files Management
+let errorFilesData = [];
+
+function showErrorFiles() {
+    const modal = document.getElementById('error-files-modal');
+    modal.style.display = 'block';
+    loadErrorFiles();
+}
+
+function closeErrorFilesModal() {
+    const modal = document.getElementById('error-files-modal');
+    modal.style.display = 'none';
+}
+
+function loadErrorFiles() {
+    document.getElementById('error-files-count').textContent = 'Loading error files...';
+    
+    fetch('/api/error-files')
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                errorFilesData = data.error_files;
+                displayErrorFiles(errorFilesData);
+                document.getElementById('error-files-count').textContent = 
+                    `Found ${data.total_count} files with processing errors`;
+            } else {
+                showNotification('Error loading error files: ' + data.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error loading error files:', error);
+            showNotification('Failed to load error files', 'error');
+        });
+}
+
+function displayErrorFiles(files) {
+    const tbody = document.getElementById('error-files-tbody');
+    tbody.innerHTML = '';
+    
+    if (files.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px; color: #888;">No error files found</td></tr>';
+        return;
+    }
+    
+    files.forEach((file, index) => {
+        const row = document.createElement('tr');
+        
+        const timestamp = new Date(file.timestamp * 1000).toLocaleString();
+        const fileStatus = file.exists ? 'exists' : 'missing';
+        const fileStatusText = file.exists ? 'Exists' : 'Missing';
+        
+        row.innerHTML = `
+            <td><input type="checkbox" class="error-file-checkbox" data-filepath="${file.file_path}"></td>
+            <td class="file-path" title="${file.filename}">${file.filename}</td>
+            <td class="file-path" title="${file.directory}">${file.directory}</td>
+            <td class="error-message" title="${file.error_message}">${file.error_message}</td>
+            <td class="timestamp">${timestamp}</td>
+            <td><span class="file-status ${fileStatus}">${fileStatusText}</span></td>
+        `;
+        
+        tbody.appendChild(row);
+    });
+}
+
+function toggleAllErrorFiles() {
+    const selectAll = document.getElementById('select-all-errors');
+    const checkboxes = document.querySelectorAll('.error-file-checkbox');
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll.checked;
+    });
+}
+
+function getSelectedErrorFiles() {
+    const checkboxes = document.querySelectorAll('.error-file-checkbox:checked');
+    return Array.from(checkboxes).map(cb => cb.dataset.filepath);
+}
+
+function downloadErrorFilesList() {
+    showNotification('Downloading error files list...', 'info');
+    
+    // Create a temporary link and trigger download
+    window.open('/api/error-files/download', '_blank');
+    
+    showNotification('Error files list download started', 'success');
+}
+
+function clearErrorFiles() {
+    if (!confirm('Are you sure you want to clear all error file tracking? This will not delete the files, only remove them from the error list.')) {
+        return;
+    }
+    
+    showNotification('Clearing error files tracking...', 'info');
+    
+    fetch('/api/error-files/clear', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            showNotification('Error files tracking cleared', 'success');
+            loadErrorFiles(); // Refresh the list
+        } else {
+            showNotification('Error clearing error files: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error clearing error files:', error);
+        showNotification('Failed to clear error files', 'error');
+    });
+}
+
+function deleteSelectedErrorFiles(deleteFromFilesystem = false) {
+    const selectedFiles = getSelectedErrorFiles();
+    
+    if (selectedFiles.length === 0) {
+        showNotification('No files selected', 'warning');
+        return;
+    }
+    
+    const action = deleteFromFilesystem ? 'delete from filesystem' : 'remove from database';
+    const confirmMsg = `Are you sure you want to ${action} ${selectedFiles.length} selected file(s)?${deleteFromFilesystem ? '\n\nWARNING: This will permanently delete the files from your disk!' : ''}`;
+    
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+    
+    const progressId = 'delete-error-files';
+    showProgressNotification(progressId, `Starting to ${action}...`, 'info');
+    
+    fetch('/api/error-files/delete', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            file_paths: selectedFiles,
+            delete_from_filesystem: deleteFromFilesystem
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        notificationManager.remove(progressId);
+        
+        if (data.status === 'success') {
+            const results = data.results;
+            let message = `Processed ${selectedFiles.length} files\n`;
+            message += `- Removed from DB: ${results.deleted_from_db.length}\n`;
+            
+            if (deleteFromFilesystem) {
+                message += `- Deleted from filesystem: ${results.deleted_from_filesystem.length}\n`;
+            }
+            
+            if (results.errors.length > 0) {
+                message += `- Errors: ${results.errors.length}`;
+                console.error('Deletion errors:', results.errors);
+            }
+            
+            showNotification(message, results.errors.length > 0 ? 'warning' : 'success');
+            loadErrorFiles(); // Refresh the list
+        } else {
+            showNotification('Error processing files: ' + data.message, 'error');
+        }
+    })
+    .catch(error => {
+        notificationManager.remove(progressId);
+        console.error('Error deleting error files:', error);
+        showNotification('Failed to process error files', 'error');
+    });
+}
+
+// Close modal when clicking outside of it
+document.addEventListener('click', function(event) {
+    const modal = document.getElementById('error-files-modal');
+    if (event.target === modal) {
+        closeErrorFilesModal();
+    }
+});
+
+// Error Files Badge Management
+function updateErrorFilesBadge() {
+    fetch('/api/error-files')
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success' && data.total_count > 0) {
+                const button = document.getElementById('error-files-btn');
+                let badge = button.querySelector('.badge');
+                if (!badge) {
+                    badge = document.createElement('span');
+                    badge.className = 'badge';
+                    button.appendChild(badge);
+                }
+                badge.textContent = data.total_count;
+                badge.style.display = 'inline';
+            } else {
+                const button = document.getElementById('error-files-btn');
+                const badge = button.querySelector('.badge');
+                if (badge) {
+                    badge.style.display = 'none';
+                }
+            }
+        })
+        .catch(error => {
+            // Silently fail for badge updates
+            console.debug('Error updating error files badge:', error);
+        });
+}
+
+// Update error files badge periodically and on page load
+document.addEventListener('DOMContentLoaded', () => {
+    updateErrorFilesBadge();
+    // Update badge every 30 seconds
+    setInterval(updateErrorFilesBadge, 30000);
+});

@@ -1,3 +1,4 @@
+import time
 # enhanced_tag_reader.py
 
 import os
@@ -67,6 +68,7 @@ class EnhancedTagReader:
             return tags
         except Exception as e:
             logging.warning(f"Error reading metadata from {file_path}: {str(e)}")
+            add_error_file(file_path, f"Error reading metadata: {str(e)}")
             return {'title': os.path.splitext(os.path.basename(file_path))[0]}
     
     def _get_id3_text(self, tag) -> str:
@@ -109,6 +111,7 @@ class EnhancedTagReader:
             
         except Exception as e:
             logging.warning(f"Error extracting tags from metadata for {file_path}: {e}")
+            add_error_file(file_path, f"Error extracting tags from metadata: {e}")
             return {}
     
     def extract_current_tags_from_filename(self, file_path: str) -> Dict[str, str]:
@@ -220,3 +223,33 @@ class EnhancedTagReader:
     def refresh_tag_definitions(self):
         """Reload tag definitions from the tags.json file."""
         self.tag_definitions = self._load_tag_definitions()
+
+# Error tracking for problematic files
+error_files = []
+
+def add_error_file(file_path, error_message):
+    """Add a file to the error list with its error message"""
+    global error_files
+    error_entry = {
+        'file_path': file_path,
+        'error_message': str(error_message),
+        'timestamp': time.time()
+    }
+    
+    # Remove existing entry for this file if present
+    error_files = [e for e in error_files if e['file_path'] != file_path]
+    error_files.append(error_entry)
+
+def get_error_files():
+    """Get all files with errors"""
+    return error_files.copy()
+
+def clear_error_files():
+    """Clear all error files"""
+    global error_files
+    error_files = []
+
+def remove_error_file(file_path):
+    """Remove a specific file from error list"""
+    global error_files
+    error_files = [e for e in error_files if e['file_path'] != file_path]

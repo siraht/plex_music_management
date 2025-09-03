@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, make_response
 from collections import defaultdict
 import os
 import logging
@@ -526,6 +526,127 @@ def perform_duplicate_scan(directory_path):
         scan_progress["results"] = [] 
 
 
+# Error file management endpoints
+@app.route('/api/error-files')
+def api_get_error_files():
+    """Get all files that had errors during processing"""
+    try:
+        from enhanced_tag_reader import get_error_files
+        error_files = get_error_files()
+        
+        # Add additional file info
+        for error_file in error_files:
+            file_path = error_file['file_path']
+            error_file['filename'] = os.path.basename(file_path)
+            error_file['directory'] = os.path.dirname(file_path)
+            error_file['exists'] = os.path.exists(file_path)
+            if error_file['exists']:
+                try:
+                    stat = os.stat(file_path)
+                    error_file['file_size'] = stat.st_size
+                    error_file['modified_time'] = stat.st_mtime
+                except:
+                    pass
+        
+        return jsonify({
+            'status': 'success',
+            'error_files': error_files,
+            'total_count': len(error_files)
+        })
+    except Exception as e:
+        logging.error(f"Error getting error files: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/error-files/download')
+def download_error_files_list():
+    """Download a text file with list of error files"""
+    try:
+        from enhanced_tag_reader import get_error_files
+        error_files = get_error_files()
+        
+        # Create text content
+        lines = []
+        lines.append("# Files with Processing Errors")
+        lines.append(f"# Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        lines.append(f"# Total files: {len(error_files)}")
+        lines.append("")
+        
+        for error_file in error_files:
+            lines.append(f"File: {error_file['file_path']}")
+            lines.append(f"Error: {error_file['error_message']}")
+            lines.append(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(error_file['timestamp']))}")
+            lines.append("")
+        
+        content = "\n".join(lines)
+        
+        # Create response with file download
+        response = make_response(content)
+        response.headers['Content-Type'] = 'text/plain'
+        response.headers['Content-Disposition'] = f'attachment; filename=error_files_{int(time.time())}.txt'
+        
+        return response
+    except Exception as e:
+        logging.error(f"Error downloading error files list: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/error-files/delete', methods=['POST'])
+def delete_error_files():
+    """Delete error files from filesystem and database"""
+    try:
+        data = request.json
+        file_paths = data.get('file_paths', [])
+        delete_from_filesystem = data.get('delete_from_filesystem', False)
+        
+        if not file_paths:
+            return jsonify({'status': 'error', 'message': 'No file paths provided'}), 400
+        
+        from enhanced_tag_reader import remove_error_file
+        
+        results = {
+            'deleted_from_db': [],
+            'deleted_from_filesystem': [],
+            'errors': []
+        }
+        
+        for file_path in file_paths:
+            try:
+                # Remove from database/cache
+                cache_manager.remove_file_from_cache(file_path)
+                remove_error_file(file_path)
+                results['deleted_from_db'].append(file_path)
+                
+                # Delete from filesystem if requested
+                if delete_from_filesystem and os.path.exists(file_path):
+                    os.remove(file_path)
+                    results['deleted_from_filesystem'].append(file_path)
+                    logging.info(f"Deleted error file from filesystem: {file_path}")
+                
+            except Exception as e:
+                error_msg = f"Error processing {file_path}: {str(e)}"
+                results['errors'].append(error_msg)
+                logging.error(error_msg)
+        
+        return jsonify({
+            'status': 'success',
+            'results': results,
+            'message': f"Processed {len(file_paths)} files"
+        })
+        
+    except Exception as e:
+        logging.error(f"Error deleting error files: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/error-files/clear', methods=['POST'])
+def api_clear_error_files():
+    """Clear all error files from tracking"""
+    try:
+        from enhanced_tag_reader import clear_error_files
+        clear_error_files()
+        return jsonify({'status': 'success', 'message': 'Error files cleared'})
+    except Exception as e:
+        logging.error(f"Error clearing error files: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     app.run(host='0.0.0.0', port=5000, debug=True)
+
