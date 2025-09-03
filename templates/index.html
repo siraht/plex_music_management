@@ -8,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
     <!-- Tabulator CSS -->
     <link href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator.min.css" rel="stylesheet">
+    <link href="https://unpkg.com/tabulator-tables@6.3.0/dist/css/tabulator_midnight.css" rel="stylesheet">
 </head>
 <body>
     <div class="container">
@@ -20,9 +21,11 @@
                 <button id="refresh-files-btn" class="btn" onclick="refreshFiles()">Refresh Files</button>
                 <button id="settings-btn" class="btn">Settings</button>
                 <button id="manage-tags-btn" class="btn">Manage Tags</button>
+                <button id="duplicate-detection-btn" class="btn btn-info" onclick="window.location.href='/duplicates'">Find Duplicates</button>
+            </div>
+            <div class="grid-buttons">
                 <button id="expand-all-btn" class="btn btn-secondary" onclick="expandAll()">Expand All</button>
                 <button id="collapse-all-btn" class="btn btn-secondary" onclick="collapseAll()">Collapse All</button>
-                <button id="duplicate-detection-btn" class="btn btn-info" onclick="window.location.href='/duplicates'">Find Duplicates</button>
             </div>
         </header>
         

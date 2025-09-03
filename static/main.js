@@ -18,7 +18,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Determine group name
             let groupName;
-            if (groupPath === '' || groupPath === '.' || !groupPath.includes('/')) {
+            if (groupPath === '' || groupPath === '.' || groupPath.trim() === '')
+{
                 groupName = 'None'; // Base directory files
             } else {
                 // Use the directory path as group name
