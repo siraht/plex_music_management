@@ -1,6 +1,7 @@
 [
     {
         "name": "Energy",
+        "prefix": "E",
         "type": "number",
         "defaultValue": "7",
         "min": 1,
@@ -8,6 +9,7 @@
     },
     {
         "name": "Mood",
+        "prefix": "M",
         "type": "text",
         "defaultValue": ""
     }

@@ -8,12 +8,21 @@ from mutagen.aiff import AIFF
 from mutagen.mp3 import MP3
 from mutagen.wave import WAVE
 import json
+from datetime import datetime
 
 import config
 from tag_manager import apply_tags_to_group
+from cache_manager import FileCacheManager
+from enhanced_tag_reader import EnhancedTagReader
+from filename_validator import FilenameValidator
 
 # Configure Flask
 app = Flask(__name__)
+
+# Initialize cache, tag reader, and filename validator
+cache_manager = FileCacheManager()
+tag_reader = EnhancedTagReader()
+filename_validator = FilenameValidator()
 
 # --- Tag Management Functions ---
 def load_tags():
@@ -32,80 +41,96 @@ def save_tags(tags):
     try:
         with open(config.TAGS_FILE, 'w') as f:
             json.dump(tags, f, indent=4)
+        # Refresh tag reader definitions when tags are updated
+        tag_reader.refresh_tag_definitions()
     except IOError as e:
         logging.error(f"Error saving tags file: {e}")
 
-# --- Metadata and File Scanning ---
+# --- Enhanced Metadata and File Scanning with Cache ---
 def get_audio_metadata(file_path):
-    """Extract metadata from audio file."""
-    try:
-        audio = None
-        if file_path.lower().endswith('.flac'):
-            audio = FLAC(file_path)
-        elif file_path.lower().endswith('.aiff'):
-            audio = AIFF(file_path)
-        elif file_path.lower().endswith('.mp3'):
-            audio = MP3(file_path)
-        elif file_path.lower().endswith('.wav'):
-            audio = WAVE(file_path)
-        
-        if not audio:
-            return {}
-            
-        tags = {}
-        if hasattr(audio, 'tags'):
-            if hasattr(audio, 'get'):  # FLAC
-                tags = {
-                    'artist': audio.get('artist', [''])[0],
-                    'album': audio.get('album', [''])[0],
-                    'title': audio.get('title', [''])[0]
-                }
-            elif hasattr(audio.tags, 'getall'):  # ID3 (MP3, AIFF)
-                tags = {
-                    'artist': audio.tags.get('TPE1', ['']).text[0] if audio.tags.get('TPE1') else '',
-                    'album': audio.tags.get('TALB', ['']).text[0] if audio.tags.get('TALB') else '',
-                    'title': audio.tags.get('TIT2', ['']).text[0] if audio.tags.get('TIT2') else ''
-                }
-                
-        # If title is empty, use filename without extension
-        if not tags.get('title'):
-            tags['title'] = os.path.splitext(os.path.basename(file_path))[0]
-            
-        return tags
-    except Exception as e:
-        logging.warning(f"Error reading metadata from {file_path}: {str(e)}")
-        return {}
+    """Extract metadata from audio file using enhanced tag reader."""
+    return tag_reader.get_audio_metadata(file_path)
 
-def scan_files_and_group():
-    """Scans the base directory and groups files by basename."""
+def scan_files_and_group_with_cache(force_rescan=False):
+    """Scans the base directory and groups files by basename, using cache for efficiency."""
     file_groups = {}
+    all_audio_files = []
+    filename_warnings = []
+    
+    # First, discover all audio files and check filename lengths
     for root, _, files in os.walk(config.BASE_DOWNLOAD_DIR):
         for file in files:
             if file.lower().endswith(('.flac', '.aiff', '.mp3', '.wav')):
                 file_path = os.path.join(root, file)
-                basename = os.path.splitext(file)[0]
-                group_key = os.path.join(root, basename)
+                all_audio_files.append(file_path)
                 
-                if group_key not in file_groups:
-                    file_groups[group_key] = {
-                        'files': [],
-                        'metadata': {}
-                    }
-                
-                # Add file to group
-                file_groups[group_key]['files'].append(file_path)
-                
-                # Get metadata if not already set for this group
-                if not file_groups[group_key]['metadata']:
-                    metadata = get_audio_metadata(file_path)
-                    if metadata:
-                        file_groups[group_key]['metadata'] = metadata
+                # Check filename length
+                validation = filename_validator.validate_filename_length(file_path)
+                if not validation['is_valid']:
+                    validation['suggested_name'] = filename_validator.suggest_filename_truncation(file_path)
+                    filename_warnings.append(validation)
+    
+    # Log filename warnings
+    if filename_warnings:
+        logging.warning(f"Found {len(filename_warnings)} files with filenames over 255 characters:")
+        for warning in filename_warnings[:5]:  # Log first 5
+            logging.warning(f"  {warning['filename']} ({warning['length']} chars)")
+        if len(filename_warnings) > 5:
+            logging.warning(f"  ... and {len(filename_warnings) - 5} more files")
+    
+    # Clean up cache for deleted files
+    cache_manager.remove_deleted_files(all_audio_files)
+    
+    # Process files using cache
+    for file_path in all_audio_files:
+        basename = os.path.splitext(os.path.basename(file_path))[0]
+        group_key = os.path.join(os.path.dirname(file_path), basename)
+        
+        if group_key not in file_groups:
+            file_groups[group_key] = {
+                'files': [],
+                'metadata': {},
+                'current_tags': {},
+                'filename_warnings': []
+            }
+        
+        file_groups[group_key]['files'].append(file_path)
+        
+        # Add filename warnings to the group
+        file_warning = next((w for w in filename_warnings if w['file_path'] == file_path), None)
+        if file_warning:
+            file_groups[group_key]['filename_warnings'].append(file_warning)
+        
+        # Check if we need to scan this file
+        needs_scan = force_rescan or cache_manager.is_file_modified(file_path)
+        
+        if needs_scan:
+            # Get comprehensive file data (metadata + current tags)
+            file_data = tag_reader.get_comprehensive_file_data(file_path)
+            
+            # Update cache
+            cache_manager.update_file_cache(
+                file_path, 
+                file_data['metadata'], 
+                file_data['current_tags']
+            )
+            
+            # Use fresh data for this group if not already set
+            if not file_groups[group_key]['metadata']:
+                file_groups[group_key]['metadata'] = file_data['metadata']
+                file_groups[group_key]['current_tags'] = file_data['current_tags']
+        else:
+            # Use cached data
+            cache_entry = cache_manager.get_file_cache_entry(file_path)
+            if cache_entry and not file_groups[group_key]['metadata']:
+                file_groups[group_key]['metadata'] = cache_entry['metadata']
+                file_groups[group_key]['current_tags'] = cache_entry['current_tags']
     
     # Sort by key (path)
     return dict(sorted(file_groups.items()))
 
 def create_tree_data(file_groups):
-    """Converts the flat file group into a structure for AG Grid with folder information."""
+    """Converts the flat file group into a structure for AG Grid with folder information, current tags, and filename warnings."""
     tree_data = []
 
     base_path_parts = config.BASE_DOWNLOAD_DIR.rstrip(os.sep).split(os.sep)
@@ -120,7 +145,13 @@ def create_tree_data(file_groups):
         path = '/'.join(relative_path_parts[:-1])  # Exclude filename from path
         filename = os.path.splitext(relative_path_parts[-1])[0]
 
-        # Add the file entry
+        # Check if any files in this group have filename warnings
+        has_filename_warning = bool(data.get('filename_warnings', []))
+        max_filename_length = 0
+        if data.get('files'):
+            max_filename_length = max(len(os.path.basename(f)) for f in data['files'])
+
+        # Create the file entry with current tags and filename validation info
         file_entry = {
             'filepath': path,  # This will be used for grouping
             'filename': filename,
@@ -128,8 +159,17 @@ def create_tree_data(file_groups):
             'album': data['metadata'].get('album', ''),
             'title': data['metadata'].get('title', '') or filename,
             'formats': [os.path.splitext(f)[1][1:].upper() for f in data['files']],
-            'group_key': group_key
+            'group_key': group_key,
+            'filename_length': max_filename_length,
+            'has_filename_warning': has_filename_warning,
+            'filename_warnings': data.get('filename_warnings', [])
         }
+        
+        # Add current tag values from cache
+        current_tags = data.get('current_tags', {})
+        for tag_name, tag_value in current_tags.items():
+            file_entry[tag_name] = tag_value
+
         tree_data.append(file_entry)
 
     return tree_data
@@ -143,9 +183,35 @@ def index():
 @app.route('/api/files')
 def get_files_for_grid():
     """API endpoint to provide file data for the AG Grid."""
-    grouped_files = scan_files_and_group()
+    force_rescan = request.args.get('force_rescan', 'false').lower() == 'true'
+    grouped_files = scan_files_and_group_with_cache(force_rescan=force_rescan)
     tree_data = create_tree_data(grouped_files)
     return jsonify(tree_data)
+
+@app.route('/api/files/refresh')
+def refresh_files():
+    """API endpoint to force refresh all files."""
+    grouped_files = scan_files_and_group_with_cache(force_rescan=True)
+    tree_data = create_tree_data(grouped_files)
+    return jsonify(tree_data)
+
+@app.route('/api/files/filename-warnings')
+def get_filename_warnings():
+    """API endpoint to get files with filename length warnings."""
+    grouped_files = scan_files_and_group_with_cache()
+    warnings = filename_validator.get_filename_warnings(grouped_files)
+    
+    # Get summary stats
+    stats = filename_validator.get_summary_stats([
+        filename_validator.validate_filename_length(f) 
+        for group in grouped_files.values() 
+        for f in group.get('files', [])
+    ])
+    
+    return jsonify({
+        'warnings': warnings,
+        'stats': stats
+    })
 
 @app.route('/api/tags', methods=['GET'])
 def get_tags():
@@ -163,6 +229,26 @@ def save_all_tags():
     save_tags(tags_data)
     return jsonify({'status': 'success', 'message': 'Tags saved successfully.'})
 
+@app.route('/api/settings', methods=['GET'])
+def get_settings():
+    """API endpoint to get the current settings."""
+    settings = config.load_settings()
+    return jsonify(settings)
+
+@app.route('/api/settings', methods=['POST'])
+def save_app_settings():
+    """API endpoint to save application settings."""
+    settings_data = request.json
+    if not isinstance(settings_data, dict):
+        return jsonify({'status': 'error', 'message': 'Invalid data format, expected a settings object'}), 400
+    
+    try:
+        config.save_settings(settings_data)
+        return jsonify({'status': 'success', 'message': 'Settings saved successfully.'})
+    except Exception as e:
+        logging.error(f"Error saving settings: {e}")
+        return jsonify({'status': 'error', 'message': f'Failed to save settings: {str(e)}'}), 500
+
 @app.route('/api/tag', methods=['POST'])
 def tag_file():
     """API endpoint to receive tagging requests from the frontend."""
@@ -173,15 +259,120 @@ def tag_file():
     if not group_key or not tags_to_apply:
         return jsonify({'status': 'error', 'message': 'Missing group_key or tags'}), 400
 
-    all_files = scan_files_and_group()
+    all_files = scan_files_and_group_with_cache()
     file_group = all_files.get(group_key)
     
     if not file_group:
         return jsonify({'status': 'error', 'message': 'File group not found'}), 404
 
-    # Apply tags to all files in the group
-    apply_tags_to_group(file_group['files'], tags_to_apply)
-    return jsonify({'status': 'success', 'message': f'Tagged {os.path.basename(group_key)}'})
+    # Validate filename lengths before applying tags
+    tag_definitions = load_tags()
+    tag_config = {tag['name'].lower(): {'prefix': tag.get('prefix', tag['name'][0])} for tag in tag_definitions}
+    
+    filename_validation_errors = []
+    for file_path in file_group['files']:
+        settings = config.load_settings()
+        tag_placement = settings.get('tag_placement', 'filename')
+        
+        # Only validate filename length if tags will be applied to filename
+        if tag_placement in ['filename', 'both']:
+            is_valid, message, suggested = filename_validator.validate_tags_for_filename_length(
+                file_path, tags_to_apply, tag_config
+            )
+            
+            if not is_valid:
+                filename_validation_errors.append({
+                    'file': os.path.basename(file_path),
+                    'message': message,
+                    'suggested': suggested
+                })
+    
+    # If there are filename validation errors, return them
+    if filename_validation_errors:
+        return jsonify({
+            'status': 'error', 
+            'message': 'Filename length validation failed',
+            'validation_errors': filename_validation_errors
+        }), 400
+
+    try:
+        # Apply tags to all files in the group
+        apply_tags_to_group(file_group['files'], tags_to_apply)
+        
+        # Update cache for all files in the group with new tag data
+        for file_path in file_group['files']:
+            file_data = tag_reader.get_comprehensive_file_data(file_path)
+            cache_manager.update_file_cache(
+                file_path,
+                file_data['metadata'],
+                file_data['current_tags']
+            )
+        
+        return jsonify({'status': 'success', 'message': f'Tagged {os.path.basename(group_key)}'})
+    except Exception as e:
+        logging.error(f"Error applying tags: {e}")
+        return jsonify({'status': 'error', 'message': f'Error applying tags: {str(e)}'}), 500
+
+@app.route('/api/validate-filename', methods=['POST'])
+def validate_filename():
+    """API endpoint to validate proposed filename changes."""
+    data = request.json
+    file_path = data.get('file_path')
+    tags = data.get('tags', {})
+    
+    if not file_path:
+        return jsonify({'status': 'error', 'message': 'Missing file_path'}), 400
+    
+    # Get tag configuration
+    tag_definitions = load_tags()
+    tag_config = {tag['name'].lower(): {'prefix': tag.get('prefix', tag['name'][0])} for tag in tag_definitions}
+    
+    # Validate the proposed filename
+    is_valid, message, suggested = filename_validator.validate_tags_for_filename_length(
+        file_path, tags, tag_config
+    )
+    
+    return jsonify({
+        'is_valid': is_valid,
+        'message': message,
+        'suggested_filename': suggested,
+        'current_length': len(os.path.basename(file_path))
+    })
+
+@app.route('/api/cache/clear', methods=['POST'])
+def clear_cache():
+    """API endpoint to clear the file cache."""
+    try:
+        cache_manager.clear_cache()
+        return jsonify({'status': 'success', 'message': 'Cache cleared successfully'})
+    except Exception as e:
+        logging.error(f"Error clearing cache: {e}")
+        return jsonify({'status': 'error', 'message': f'Error clearing cache: {str(e)}'}), 500
+
+@app.route('/api/cache/stats')
+def get_cache_stats():
+    """API endpoint to get cache statistics."""
+    try:
+        cached_files = cache_manager.get_all_cached_files()
+        
+        # Get filename length statistics
+        all_validations = []
+        for cache_data in cached_files.values():
+            validation = filename_validator.validate_filename_length(cache_data['file_path'])
+            all_validations.append(validation)
+        
+        filename_stats = filename_validator.get_summary_stats(all_validations)
+        
+        stats = {
+            'total_cached_files': len(cached_files),
+            'cache_db_path': cache_manager.db_path,
+            'last_updated': max([f['last_scanned'] for f in cached_files.values()]) if cached_files else None,
+            'filename_stats': filename_stats
+        }
+        return jsonify(stats)
+    except Exception as e:
+        logging.error(f"Error getting cache stats: {e}")
+        return jsonify({'status': 'error', 'message': f'Error getting cache stats: {str(e)}'}), 500
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)

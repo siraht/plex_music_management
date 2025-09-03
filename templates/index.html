@@ -14,7 +14,14 @@
     <div class="container">
         <header>
             <h1>Plex Music Tagger</h1>
-            <button id="manage-tags-btn" class="btn">Manage Tags</button>
+            <div class="header-buttons">
+                <button id="filename-warnings-btn" class="btn btn-warning" onclick="showFilenameWarnings()">CDJ Warnings</button>
+                <button id="cache-stats-btn" class="btn btn-info" onclick="showCacheStats()">Cache Stats</button>
+                <button id="clear-cache-btn" class="btn btn-warning" onclick="clearCache()">Clear Cache</button>
+                <button id="refresh-files-btn" class="btn" onclick="refreshFiles()">Refresh Files</button>
+                <button id="settings-btn" class="btn">Settings</button>
+                <button id="manage-tags-btn" class="btn">Manage Tags</button>
+            </div>
         </header>
         
         <main>
@@ -22,13 +29,58 @@
         </main>
     </div>
 
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button" data-modal="settings">&times;</span>
+            <h2>Settings</h2>
+            <div class="settings-section">
+                <h3>Tag Placement</h3>
+                <p class="setting-description">Choose where tags should be applied when tagging files:</p>
+                <div class="radio-group">
+                    <label class="radio-option">
+                        <input type="radio" name="tag_placement" value="filename">
+                        <span class="radio-custom"></span>
+                        <div class="radio-label">
+                            <strong>Filename only</strong>
+                            <small>Add tags to filename (e.g., "Song -E7 -Mdark.flac")</small>
+                        </div>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="tag_placement" value="title">
+                        <span class="radio-custom"></span>
+                        <div class="radio-label">
+                            <strong>Metadata only</strong>
+                            <small>Add tags to title metadata field</small>
+                        </div>
+                    </label>
+                    <label class="radio-option">
+                        <input type="radio" name="tag_placement" value="both">
+                        <span class="radio-custom"></span>
+                        <div class="radio-label">
+                            <strong>Both filename and metadata</strong>
+                            <small>Add tags to both filename and title metadata</small>
+                        </div>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button id="save-settings-btn" class="btn btn-primary">Save Settings</button>
+                <button id="cancel-settings-btn" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tag Management Modal -->
     <div id="tag-modal" class="modal">
         <div class="modal-content">
-            <span class="close-button">&times;</span>
+            <span class="close-button" data-modal="tag">&times;</span>
             <h2>Manage Tags</h2>
             <div id="tag-list-editor"></div>
-            <button id="add-tag-btn" class="btn">Add New Tag</button>
-            <button id="save-tags-btn" class="btn btn-primary">Save Tags</button>
+            <div class="modal-buttons">
+                <button id="add-tag-btn" class="btn">Add New Tag</button>
+                <button id="save-tags-btn" class="btn btn-primary">Save Tags</button>
+            </div>
         </div>
     </div>
 
