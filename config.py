@@ -64,3 +64,20 @@ if not all([PLEX_URL, PLEX_TOKEN, BASE_DOWNLOAD_DIR, LOG_FILE]):
         "One or more required environment variables are not set. "
         "Please copy .env.example to .env and fill it out."
     )
+
+# --- Docker Path Mapping Configuration ---
+# Maps Plex Docker paths to actual filesystem paths
+# Format: {docker_path: filesystem_path}
+PLEX_PATH_MAPPINGS = {
+    "/music/": "/mnt/user/music/"
+}
+
+# Enable/disable direct file copying (set to False to always use Plex download)
+USE_DIRECT_FILE_COPY = True
+
+def translate_plex_path(plex_path):
+    """Translates a Plex Docker path to the actual filesystem path."""
+    for docker_path, fs_path in PLEX_PATH_MAPPINGS.items():
+        if plex_path.startswith(docker_path):
+            return plex_path.replace(docker_path, fs_path, 1)
+    return plex_path
