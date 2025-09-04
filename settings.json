@@ -1,4 +1,14 @@
 {
     "tag_placement": "metadata",
-    "version": "1.0"
+    "version": "1.0",
+    "mcp_servers": {
+        "rekordbox-database": {
+            "command": "uv",
+            "args": [
+                "run",
+                "rekordbox-mcp"
+            ],
+            "cwd": "/path/to/rekordbox-mcp"
+        }
+    }
 }

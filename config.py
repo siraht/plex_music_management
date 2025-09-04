@@ -26,7 +26,8 @@ def load_settings():
     """Loads settings from the JSON file with default fallbacks."""
     default_settings = {
         "tag_placement": "filename",  # Options: "filename", "title", "both"
-        "version": "1.0"
+        "version": "1.0",
+        "mcp_servers": {}
     }
     
     if not os.path.exists(SETTINGS_FILE):

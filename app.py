@@ -17,8 +17,10 @@ from cache_manager import FileCacheManager
 from enhanced_tag_reader import EnhancedTagReader
 from filename_validator import FilenameValidator
 from duplicate_detector import AdvancedDuplicateDetector
+from mcp_manager import MCPManager
 import threading
 import time
+import atexit
 
 # Helper function to strip existing tags from filename
 def strip_existing_tags_from_basename(basename):
@@ -48,6 +50,13 @@ tag_reader = EnhancedTagReader()
 filename_validator = FilenameValidator()
 # Initialize duplicate detector
 duplicate_detector = AdvancedDuplicateDetector(cache_manager)
+
+# Initialize MCP Manager
+mcp_servers_config = config.load_settings().get('mcp_servers', {})
+mcp_manager = MCPManager(mcp_servers_config)
+
+# Ensure MCP servers are stopped on exit
+atexit.register(mcp_manager.stop_all_servers)
 
 # Global variables for duplicate scan progress
 scan_progress = {"scanning": False, "progress": 0, "total": 0, "current_file": "", "results": None}
@@ -646,7 +655,27 @@ def api_clear_error_files():
     except Exception as e:
         logging.error(f"Error clearing error files: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+# --- MCP Server Management Endpoints ---
+@app.route('/api/mcp/servers', methods=['GET'])
+def list_mcp_servers():
+    """List all configured MCP servers and their statuses."""
+    return jsonify(mcp_manager.list_servers())
+
+@app.route('/api/mcp/servers/<server_name>/start', methods=['POST'])
+def start_mcp_server(server_name):
+    """Start a specific MCP server."""
+    if mcp_manager.start_server(server_name):
+        return jsonify({'status': 'success', 'message': f"Server '{server_name}' started."})
+    return jsonify({'status': 'error', 'message': f"Failed to start server '{server_name}'."}), 500
+
+@app.route('/api/mcp/servers/<server_name>/stop', methods=['POST'])
+def stop_mcp_server(server_name):
+    """Stop a specific MCP server."""
+    if mcp_manager.stop_server(server_name):
+        return jsonify({'status': 'success', 'message': f"Server '{server_name}' stopped."})
+    return jsonify({'status': 'error', 'message': f"Failed to stop server '{server_name}'."}), 500
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     app.run(host='0.0.0.0', port=5000, debug=True)
-
