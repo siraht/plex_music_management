@@ -4,6 +4,7 @@ import sqlite3
 import os
 import logging
 import json
+import hashlib
 from typing import Dict, List, Optional, Tuple
 from datetime import datetime
 import config
@@ -11,11 +12,13 @@ import config
 class FileCacheManager:
     """Manages SQLite cache for file metadata and tags to enable incremental scanning."""
     
-    def __init__(self, db_path: str = None):
+    def __init__(self, db_path: str = None, use_content_hash: bool = True):
         if db_path is None:
             db_path = os.path.join(os.path.dirname(__file__), 'file_cache.db')
         self.db_path = db_path
+        self.use_content_hash = use_content_hash
         self._init_database()
+        self._migrate_database()  # Add migration for existing databases
     
     def _init_database(self):
         """Initialize the SQLite database with required tables."""
@@ -23,7 +26,7 @@ class FileCacheManager:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
-                # Create table for file cache
+                # Create table for file cache with content_hash field
                 cursor.execute('''
                     CREATE TABLE IF NOT EXISTS file_cache (
                         file_path TEXT PRIMARY KEY,
@@ -32,7 +35,8 @@ class FileCacheManager:
                         last_scanned REAL NOT NULL,
                         metadata_json TEXT,
                         current_tags_json TEXT,
-                        checksum TEXT
+                        checksum TEXT,
+                        content_hash TEXT
                     )
                 ''')
                 
@@ -48,6 +52,70 @@ class FileCacheManager:
         except sqlite3.Error as e:
             logging.error(f"Error initializing database: {e}")
             raise
+    
+    def _migrate_database(self):
+        """Add content_hash column to existing databases."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Check if content_hash column exists
+                cursor.execute("PRAGMA table_info(file_cache)")
+                columns = [column[1] for column in cursor.fetchall()]
+                
+                if 'content_hash' not in columns:
+                    logging.info("Migrating database: adding content_hash column...")
+                    cursor.execute('ALTER TABLE file_cache ADD COLUMN content_hash TEXT')
+                    conn.commit()
+                    logging.info("Database migration completed")
+                    
+        except sqlite3.Error as e:
+            logging.warning(f"Migration check/update: {e}")
+    
+    def _compute_file_hash(self, file_path: str, quick: bool = True) -> str:
+        """
+        Compute a hash of the file content.
+        
+        Args:
+            file_path: Path to the file
+            quick: If True, only hash first and last chunks for speed
+        
+        Returns:
+            Hex string of the hash
+        """
+        try:
+            hasher = hashlib.md5()
+            
+            with open(file_path, 'rb') as f:
+                if quick:
+                    # Quick hash: first 64KB + last 64KB + file size
+                    chunk_size = 65536  # 64KB
+                    
+                    # Add file size to hash (helps detect truncation)
+                    file_size = os.path.getsize(file_path)
+                    hasher.update(str(file_size).encode())
+                    
+                    # Hash first chunk
+                    first_chunk = f.read(chunk_size)
+                    if first_chunk:
+                        hasher.update(first_chunk)
+                    
+                    # Hash last chunk if file is large enough
+                    if file_size > chunk_size * 2:
+                        f.seek(-chunk_size, os.SEEK_END)
+                        last_chunk = f.read(chunk_size)
+                        if last_chunk:
+                            hasher.update(last_chunk)
+                else:
+                    # Full hash: read entire file
+                    while chunk := f.read(8192):
+                        hasher.update(chunk)
+            
+            return hasher.hexdigest()
+            
+        except Exception as e:
+            logging.warning(f"Error computing hash for {file_path}: {e}")
+            return ""
     
     def get_file_cache_entry(self, file_path: str) -> Optional[Dict]:
         """Get cached data for a specific file."""
@@ -83,8 +151,17 @@ class FileCacheManager:
             logging.error(f"Error getting cache entry for {file_path}: {e}")
             return None
     
-    def is_file_modified(self, file_path: str) -> bool:
-        """Check if a file has been modified since last scan."""
+    def is_file_modified(self, file_path: str, deep_check: bool = False) -> bool:
+        """
+        Check if a file has been modified since last scan.
+        
+        Args:
+            file_path: Path to the file to check
+            deep_check: If True, always use content hash checking
+        
+        Returns:
+            True if file has been modified, False otherwise
+        """
         if not os.path.exists(file_path):
             return True  # File doesn't exist, consider it modified
         
@@ -98,9 +175,25 @@ class FileCacheManager:
             if not cache_entry:
                 return True  # File not in cache, needs scanning
             
-            # Check if modification time or size changed
-            return (cache_entry['last_modified'] != current_mtime or 
-                   cache_entry['file_size'] != current_size)
+            # First check: modification time or size changed
+            if (cache_entry['last_modified'] != current_mtime or 
+                cache_entry['file_size'] != current_size):
+                return True
+            
+            # Second check: content hash (if enabled and available)
+            if self.use_content_hash or deep_check:
+                cached_hash = cache_entry.get('content_hash')
+                if cached_hash:
+                    # Compute current hash and compare
+                    current_hash = self._compute_file_hash(file_path, quick=True)
+                    if current_hash and current_hash != cached_hash:
+                        logging.debug(f"Content hash mismatch for {file_path}")
+                        return True
+                else:
+                    # No cached hash, consider file modified to compute one
+                    return True
+            
+            return False
             
         except OSError as e:
             logging.warning(f"Error checking file modification for {file_path}: {e}")
@@ -112,13 +205,19 @@ class FileCacheManager:
             stat = os.stat(file_path)
             current_time = datetime.now().timestamp()
             
+            # Compute content hash if enabled
+            content_hash = None
+            if self.use_content_hash:
+                content_hash = self._compute_file_hash(file_path, quick=True)
+            
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
                 
                 cursor.execute('''
                     INSERT OR REPLACE INTO file_cache 
-                    (file_path, last_modified, file_size, last_scanned, metadata_json, current_tags_json, checksum)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (file_path, last_modified, file_size, last_scanned, metadata_json, 
+                     current_tags_json, checksum, content_hash)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     file_path,
                     stat.st_mtime,
@@ -126,7 +225,8 @@ class FileCacheManager:
                     current_time,
                     json.dumps(metadata),
                     json.dumps(current_tags),
-                    checksum
+                    checksum,
+                    content_hash
                 ))
                 
                 conn.commit()
@@ -134,6 +234,33 @@ class FileCacheManager:
         except (sqlite3.Error, OSError) as e:
             logging.error(f"Error updating cache for {file_path}: {e}")
             raise
+    
+    def force_rehash_all(self):
+        """Force recomputation of content hashes for all cached files."""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # Get all file paths
+                cursor.execute('SELECT file_path FROM file_cache')
+                file_paths = [row[0] for row in cursor.fetchall()]
+                
+                updated_count = 0
+                for file_path in file_paths:
+                    if os.path.exists(file_path):
+                        content_hash = self._compute_file_hash(file_path, quick=True)
+                        if content_hash:
+                            cursor.execute(
+                                'UPDATE file_cache SET content_hash = ? WHERE file_path = ?',
+                                (content_hash, file_path)
+                            )
+                            updated_count += 1
+                
+                conn.commit()
+                logging.info(f"Updated content hashes for {updated_count} files")
+                
+        except sqlite3.Error as e:
+            logging.error(f"Error updating content hashes: {e}")
     
     def get_files_modified_since(self, timestamp: float) -> List[Dict]:
         """Get all files that were modified after the given timestamp."""
@@ -252,3 +379,50 @@ class FileCacheManager:
         except sqlite3.Error as e:
             logging.error(f"Error clearing cache: {e}")
             raise
+    
+    def verify_cache_integrity(self, sample_size: int = 10) -> Dict:
+        """
+        Verify cache integrity by checking a sample of files.
+        
+        Args:
+            sample_size: Number of files to check (0 = all files)
+        
+        Returns:
+            Dictionary with verification results
+        """
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                if sample_size > 0:
+                    cursor.execute(
+                        'SELECT file_path, content_hash FROM file_cache ORDER BY RANDOM() LIMIT ?',
+                        (sample_size,)
+                    )
+                else:
+                    cursor.execute('SELECT file_path, content_hash FROM file_cache')
+                
+                rows = cursor.fetchall()
+                
+                results = {
+                    'total_checked': len(rows),
+                    'hash_mismatches': [],
+                    'missing_files': [],
+                    'missing_hashes': []
+                }
+                
+                for file_path, cached_hash in rows:
+                    if not os.path.exists(file_path):
+                        results['missing_files'].append(file_path)
+                    elif not cached_hash:
+                        results['missing_hashes'].append(file_path)
+                    else:
+                        current_hash = self._compute_file_hash(file_path, quick=True)
+                        if current_hash != cached_hash:
+                            results['hash_mismatches'].append(file_path)
+                
+                return results
+                
+        except sqlite3.Error as e:
+            logging.error(f"Error verifying cache integrity: {e}")
+            return {}

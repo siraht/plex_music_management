@@ -48,13 +48,13 @@ class EnhancedTagReader:
                 
             tags = {}
             if hasattr(audio, 'tags') and audio.tags:
-                if hasattr(audio, 'get'):  # FLAC
+                if file_path.lower().endswith('.flac'):  # FLAC
                     tags = {
                         'artist': audio.get('artist', [''])[0] if audio.get('artist') else '',
                         'album': audio.get('album', [''])[0] if audio.get('album') else '',
                         'title': audio.get('title', [''])[0] if audio.get('title') else ''
                     }
-                elif hasattr(audio.tags, 'get'):  # ID3 (MP3, AIFF, WAV)
+                else:  # ID3 (MP3, AIFF, WAV)
                     tags = {
                         'artist': self._get_id3_text(audio.tags.get('TPE1')),
                         'album': self._get_id3_text(audio.tags.get('TALB')),

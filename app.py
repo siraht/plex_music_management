@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, render_template, request, jsonify, make_response
+from flask import Flask, render_template, request, jsonify
 from collections import defaultdict
 import os
 import logging
@@ -17,10 +17,8 @@ from cache_manager import FileCacheManager
 from enhanced_tag_reader import EnhancedTagReader
 from filename_validator import FilenameValidator
 from duplicate_detector import AdvancedDuplicateDetector
-from mcp_manager import MCPManager
 import threading
 import time
-import atexit
 
 # Helper function to strip existing tags from filename
 def strip_existing_tags_from_basename(basename):
@@ -50,13 +48,6 @@ tag_reader = EnhancedTagReader()
 filename_validator = FilenameValidator()
 # Initialize duplicate detector
 duplicate_detector = AdvancedDuplicateDetector(cache_manager)
-
-# Initialize MCP Manager
-mcp_servers_config = config.load_settings().get('mcp_servers', {})
-mcp_manager = MCPManager(mcp_servers_config)
-
-# Ensure MCP servers are stopped on exit
-atexit.register(mcp_manager.stop_all_servers)
 
 # Global variables for duplicate scan progress
 scan_progress = {"scanning": False, "progress": 0, "total": 0, "current_file": "", "results": None}
@@ -535,146 +526,70 @@ def perform_duplicate_scan(directory_path):
         scan_progress["results"] = [] 
 
 
-# Error file management endpoints
-@app.route('/api/error-files')
-def api_get_error_files():
-    """Get all files that had errors during processing"""
+
+@app.route('/api/cache/verify', methods=['POST'])
+def verify_cache():
+    """API endpoint to verify cache integrity."""
     try:
-        from enhanced_tag_reader import get_error_files
-        error_files = get_error_files()
+        sample_size = request.json.get('sample_size', 10) if request.is_json else 10
+        results = cache_manager.verify_cache_integrity(sample_size)
         
-        # Add additional file info
-        for error_file in error_files:
-            file_path = error_file['file_path']
-            error_file['filename'] = os.path.basename(file_path)
-            error_file['directory'] = os.path.dirname(file_path)
-            error_file['exists'] = os.path.exists(file_path)
-            if error_file['exists']:
-                try:
-                    stat = os.stat(file_path)
-                    error_file['file_size'] = stat.st_size
-                    error_file['modified_time'] = stat.st_mtime
-                except:
-                    pass
+        # Format results for display
+        message_parts = []
+        if results.get('hash_mismatches'):
+            message_parts.append(f"{len(results['hash_mismatches'])} files with content changes")
+        if results.get('missing_files'):
+            message_parts.append(f"{len(results['missing_files'])} missing files")
+        if results.get('missing_hashes'):
+            message_parts.append(f"{len(results['missing_hashes'])} files need hash computation")
+        
+        if not message_parts:
+            message = f"Cache verified: {results['total_checked']} files OK"
+            status = 'success'
+        else:
+            message = f"Issues found: {', '.join(message_parts)}"
+            status = 'warning'
+        
+        return jsonify({
+            'status': status,
+            'message': message,
+            'details': results
+        })
+    except Exception as e:
+        logging.error(f"Error verifying cache: {e}")
+        return jsonify({'status': 'error', 'message': f'Error verifying cache: {str(e)}'}), 500
+
+@app.route('/api/cache/rehash', methods=['POST'])
+def rehash_cache():
+    """API endpoint to force rehashing of all cached files."""
+    try:
+        cache_manager.force_rehash_all()
+        return jsonify({
+            'status': 'success',
+            'message': 'Content hashes updated for all cached files. Files with changes will now be detected.'
+        })
+    except Exception as e:
+        logging.error(f"Error rehashing cache: {e}")
+        return jsonify({'status': 'error', 'message': f'Error updating hashes: {str(e)}'}), 500
+
+@app.route('/api/scan/deep', methods=['POST'])
+def deep_scan():
+    """API endpoint to trigger a deep scan with content verification."""
+    try:
+        # First rehash all files to ensure we have current content hashes
+        cache_manager.force_rehash_all()
+        
+        # Then trigger a rescan which will now detect content changes
+        grouped_files = scan_files_and_group_with_cache(force_rescan=False)
         
         return jsonify({
             'status': 'success',
-            'error_files': error_files,
-            'total_count': len(error_files)
+            'message': 'Deep scan completed. All file content changes have been detected.',
+            'groups_found': len(grouped_files)
         })
     except Exception as e:
-        logging.error(f"Error getting error files: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/api/error-files/download')
-def download_error_files_list():
-    """Download a text file with list of error files"""
-    try:
-        from enhanced_tag_reader import get_error_files
-        error_files = get_error_files()
-        
-        # Create text content
-        lines = []
-        lines.append("# Files with Processing Errors")
-        lines.append(f"# Generated: {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        lines.append(f"# Total files: {len(error_files)}")
-        lines.append("")
-        
-        for error_file in error_files:
-            lines.append(f"File: {error_file['file_path']}")
-            lines.append(f"Error: {error_file['error_message']}")
-            lines.append(f"Timestamp: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(error_file['timestamp']))}")
-            lines.append("")
-        
-        content = "\n".join(lines)
-        
-        # Create response with file download
-        response = make_response(content)
-        response.headers['Content-Type'] = 'text/plain'
-        response.headers['Content-Disposition'] = f'attachment; filename=error_files_{int(time.time())}.txt'
-        
-        return response
-    except Exception as e:
-        logging.error(f"Error downloading error files list: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/api/error-files/delete', methods=['POST'])
-def delete_error_files():
-    """Delete error files from filesystem and database"""
-    try:
-        data = request.json
-        file_paths = data.get('file_paths', [])
-        delete_from_filesystem = data.get('delete_from_filesystem', False)
-        
-        if not file_paths:
-            return jsonify({'status': 'error', 'message': 'No file paths provided'}), 400
-        
-        from enhanced_tag_reader import remove_error_file
-        
-        results = {
-            'deleted_from_db': [],
-            'deleted_from_filesystem': [],
-            'errors': []
-        }
-        
-        for file_path in file_paths:
-            try:
-                # Remove from database/cache
-                cache_manager.remove_file_from_cache(file_path)
-                remove_error_file(file_path)
-                results['deleted_from_db'].append(file_path)
-                
-                # Delete from filesystem if requested
-                if delete_from_filesystem and os.path.exists(file_path):
-                    os.remove(file_path)
-                    results['deleted_from_filesystem'].append(file_path)
-                    logging.info(f"Deleted error file from filesystem: {file_path}")
-                
-            except Exception as e:
-                error_msg = f"Error processing {file_path}: {str(e)}"
-                results['errors'].append(error_msg)
-                logging.error(error_msg)
-        
-        return jsonify({
-            'status': 'success',
-            'results': results,
-            'message': f"Processed {len(file_paths)} files"
-        })
-        
-    except Exception as e:
-        logging.error(f"Error deleting error files: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/api/error-files/clear', methods=['POST'])
-def api_clear_error_files():
-    """Clear all error files from tracking"""
-    try:
-        from enhanced_tag_reader import clear_error_files
-        clear_error_files()
-        return jsonify({'status': 'success', 'message': 'Error files cleared'})
-    except Exception as e:
-        logging.error(f"Error clearing error files: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-# --- MCP Server Management Endpoints ---
-@app.route('/api/mcp/servers', methods=['GET'])
-def list_mcp_servers():
-    """List all configured MCP servers and their statuses."""
-    return jsonify(mcp_manager.list_servers())
-
-@app.route('/api/mcp/servers/<server_name>/start', methods=['POST'])
-def start_mcp_server(server_name):
-    """Start a specific MCP server."""
-    if mcp_manager.start_server(server_name):
-        return jsonify({'status': 'success', 'message': f"Server '{server_name}' started."})
-    return jsonify({'status': 'error', 'message': f"Failed to start server '{server_name}'."}), 500
-
-@app.route('/api/mcp/servers/<server_name>/stop', methods=['POST'])
-def stop_mcp_server(server_name):
-    """Stop a specific MCP server."""
-    if mcp_manager.stop_server(server_name):
-        return jsonify({'status': 'success', 'message': f"Server '{server_name}' stopped."})
-    return jsonify({'status': 'error', 'message': f"Failed to stop server '{server_name}'."}), 500
+        logging.error(f"Error during deep scan: {e}")
+        return jsonify({'status': 'error', 'message': f'Error during deep scan: {str(e)}'}), 500
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
