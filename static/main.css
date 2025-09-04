@@ -274,7 +274,6 @@ tbody tr:nth-child(5) { animation-delay: 0.5s; }
   padding: 25px;
   border: 1px solid #555;
   width: 80%;
-  max-width: 700px;
   border-radius: 8px;
   box-shadow: 0 5px 15px rgba(0,0,0,0.3);
   color: #f0f0f0;
@@ -320,6 +319,14 @@ tbody tr:nth-child(5) { animation-delay: 0.5s; }
   color: #f0f0f0;
 }
 
+input[name="defaultValue"] {
+  width: 8rem;
+}
+
+input[name="prefix"] {
+  width: 4rem;
+}
+
 .remove-tag-btn {
   background-color: #dc3545;
   color: white;
@@ -327,6 +334,7 @@ tbody tr:nth-child(5) { animation-delay: 0.5s; }
   padding: 5px 10px;
   border-radius: 4px;
   cursor: pointer;
+  margin-left: auto;
 }
 
 /* Header Buttons */
@@ -1033,6 +1041,15 @@ header {
     font-family: monospace;
     font-size: 0.85em;
     color: #bbb;
+}
+
+#error-files-modal .modal-header span {
+  cursor: pointer;
+}
+
+#error-files-modal .modal-header {
+  display: flex;
+  justify-content: space-between;
 }
 
 /* Badge styles for buttons */

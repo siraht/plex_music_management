@@ -1,15 +1,15 @@
 [
     {
         "name": "Energy",
-        "prefix": "-E",
+        "prefix": "E",
         "type": "number",
-        "defaultValue": "7",
+        "defaultValue": "",
         "min": 1,
         "max": 10
     },
     {
-        "name": "Mood",
-        "prefix": "M",
+        "name": "Tags",
+        "prefix": "T",
         "type": "text",
         "defaultValue": ""
     }
